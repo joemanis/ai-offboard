@@ -10,6 +10,9 @@ def test_landing_page_loads():
     resp = client.get("/")
     assert resp.status_code == 200
     assert "ai-offboard" in resp.text.lower()
+    # Polished landing: hero + stylesheet linked
+    assert "Audit your AI access" in resp.text
+    assert 'href="/static/style.css"' in resp.text
 
 
 def test_demo_scan_renders_findings():
@@ -20,6 +23,17 @@ def test_demo_scan_renders_findings():
     assert "ai access audit" in text
     assert "microsoft 365 copilot" in text
     assert "stale@example.com" in text
+
+
+def test_demo_scan_renders_remediation_and_apps():
+    client = TestClient(app)
+    resp = client.post("/scan", data={"tenant_id": "demo", "mock": "1"})
+    assert resp.status_code == 200
+    text = resp.text
+    # New polished report surfaces: app inventory chips + remediation steps
+    assert "App inventory" in text
+    assert "Remediation" in text
+    assert "Microsoft 365 Copilot" in text
 
 
 def test_report_md_download_empty_until_scan():

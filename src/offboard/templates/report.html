@@ -1,80 +1,88 @@
-<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Audit report — ai-offboard</title>
-  <style>
-    :root { --accent:#2563eb; --bg:#0f172a; --card:#1e293b; --text:#e2e8f0; --muted:#94a3b8; }
-    * { box-sizing:border-box; }
-    body { margin:0; font-family:system-ui,Segoe UI,Roboto,sans-serif; background:var(--bg); color:var(--text); }
-    .wrap { max-width:860px; margin:0 auto; padding:32px 24px 64px; }
-    .head { display:flex; justify-content:space-between; align-items:center; margin-bottom:24px; }
-    h1 { font-size:24px; margin:0; }
-    .pill { background:var(--card); border:1px solid #334155; padding:6px 12px; border-radius:999px; font-size:13px; color:var(--muted); }
-    .meta { color:var(--muted); font-size:14px; margin:0 0 20px; }
-    .grid { display:grid; grid-template-columns:repeat(3,1fr); gap:14px; margin-bottom:24px; }
-    .stat { background:var(--card); border:1px solid #334155; border-radius:12px; padding:16px; }
-    .stat b { display:block; font-size:28px; }
-    .stat span { color:var(--muted); font-size:13px; }
-    .btn { background:var(--accent); color:#fff; text-decoration:none; border:0; padding:10px 16px; border-radius:8px; font-size:14px; font-weight:600; margin-right:8px; display:inline-block; }
-    .btn.ghost { background:#334155; }
-    .card { background:var(--card); border:1px solid #334155; border-radius:12px; padding:20px; margin-bottom:16px; }
-    table { width:100%; border-collapse:collapse; font-size:14px; }
-    th,td { text-align:left; padding:10px 12px; border-bottom:1px solid #334155; }
-    th { color:var(--muted); font-weight:600; }
-    .sev-high { color:#f87171; font-weight:700; text-transform:uppercase; font-size:12px; }
-    .sev-medium { color:#fbbf24; font-weight:700; text-transform:uppercase; font-size:12px; }
-    .sev-low { color:#4ade80; font-weight:700; text-transform:uppercase; font-size:12px; }
-    pre { background:#0b1220; padding:16px; border-radius:10px; overflow-x:auto; font-size:13px; line-height:1.5; }
-    .none { color:var(--muted); font-style:italic; }
-  </style>
-</head>
-<body>
-  <div class="wrap">
-    <div class="head">
-      <h1>AI Access Audit</h1>
-      <span class="pill">mode: {{ mode }}</span>
+{% extends "base.html" %}
+{% block title %}Audit report — ai-offboard{% endblock %}
+
+{% block content %}
+  <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:14px; flex-wrap:wrap; margin-bottom:6px;">
+    <div>
+      <h1 style="margin:0 0 6px; font-size:24px; letter-spacing:-0.2px;">AI Access Audit</h1>
+      <p class="note" style="margin:0">Tenant <code>{{ tenant_id }}</code></p>
     </div>
-    <p class="meta">Tenant <code>{{ tenant_id }}</code> · scanned {{ scanned_at or "just now" }}</p>
+    {% if mode %}
+      <span class="pill {{ mode }}"><span class="dot"></span>{{ mode }} scan</span>
+    {% endif %}
+  </div>
+  <p class="note" style="margin:4px 0 22px">Scanned {{ scanned_at or "just now" }}</p>
 
-    <div class="grid">
-      <div class="stat"><b>{{ principal_count }}</b><span>principals</span></div>
-      <div class="stat"><b>{{ app_count }}</b><span>app assignments</span></div>
-      <div class="stat"><b>{{ findings|length }}</b><span>findings</span></div>
-    </div>
+  <div class="stats">
+    <div class="stat accent"><b>{{ principal_count }}</b><span>principals</span></div>
+    <div class="stat green"><b>{{ app_count }}</b><span>app assignments</span></div>
+    <div class="stat amber"><b>{{ findings|length }}</b><span>findings</span></div>
+  </div>
 
-    <p>
-      <a class="btn" href="/report.md">Download .md</a>
-      <a class="btn ghost" href="/report.html">Download .html</a>
-      <a class="btn ghost" href="/">← New audit</a>
-    </p>
+  <div class="actions">
+    <a class="btn" href="/report.md" download>Download report.md</a>
+    <a class="btn ghost" href="/report.html" download>Download report.html</a>
+    <a class="btn ghost" href="/">← New audit</a>
+  </div>
 
-    <div class="card">
-      <h2 style="margin-top:0">Findings</h2>
-      {% if findings %}
-      <table>
-        <thead><tr><th>Severity</th><th>Rule</th><th>Subject</th><th>Evidence</th></tr></thead>
-        <tbody>
-          {% for f in findings %}
-          <tr>
-            <td><span class="sev-{{ f.severity }}">{{ f.severity }}</span></td>
-            <td><code>{{ f.rule_id }}</code></td>
-            <td>{{ f.subject }}</td>
-            <td>{{ f.evidence }}</td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-      {% else %}
-      <p class="none">No findings. Clean scan.</p>
-      {% endif %}
-    </div>
+  <div class="card">
+    <h2>App inventory</h2>
+    <p class="sub">AI apps with assignments found in this tenant.</p>
+    {% if apps %}
+      <div class="chips">
+        {% for app in apps %}
+          <span class="chip {{ 'high' if app.tier == 'high' else '' }}">
+            {{ app.name }}<small>{{ app.tier or 'unknown' }}</small>
+          </span>
+        {% endfor %}
+      </div>
+    {% else %}
+      <p class="empty">No AI app assignments detected.</p>
+    {% endif %}
+  </div>
 
-    <div class="card">
-      <h2 style="margin-top:0">Full report (markdown)</h2>
-      <pre>{{ report_md }}</pre>
+  <div class="card">
+    <h2>Findings</h2>
+    {% if findings %}
+      <div class="tablewrap">
+        <table>
+          <thead><tr><th>Severity</th><th>Rule</th><th>Subject</th><th>Evidence</th><th>Remediation</th></tr></thead>
+          <tbody>
+            {% for f in findings %}
+            <tr>
+              <td><span class="sev sev-{{ f.severity }}">{{ f.severity }}</span></td>
+              <td><code>{{ f.rule_id }}</code></td>
+              <td>{{ f.subject }}</td>
+              <td>{{ f.evidence }}</td>
+              <td>
+                <ul class="rem">
+                  {% for step in f.remediation %}
+                    <li>{{ step }}</li>
+                  {% else %}
+                    <li>No programmed steps.</li>
+                  {% endfor %}
+                </ul>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <div class="legend">
+        <span><span class="sevbadge critical">Critical</span> broad access</span>
+        <span><span class="sevbadge high">High</span> revoke promptly</span>
+        <span><span class="sevbadge medium">Medium</span> review</span>
+        <span><span class="sevbadge low">Low</span> monitor</span>
+      </div>
+    {% else %}
+      <p class="empty">No findings. Clean scan.</p>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <h2>Full report (markdown)</h2>
+    <div class="tablewrap">
+      <pre style="min-width:640px">{{ report_md }}</pre>
     </div>
   </div>
-</body>
-</html>
+{% endblock %}

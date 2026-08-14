@@ -40,7 +40,7 @@ where = ["src"]
 # Critical: ship the runtime data files (catalog + web templates), or a wheel
 # install would have an empty app catalog and a broken web UI.
 [tool.setuptools.package-data]
-offboard = ["catalog/*.json", "templates/*.html"]
+offboard = ["catalog/*.json", "templates/*.html", "static/*.css"]
 
 [tool.ruff]
 line-length = 100
