@@ -31,6 +31,19 @@ offboard web                 # local web UI, then click "Run demo scan"
 offboard audit --tenant demo --mock  # or a terminal report
 ```
 
+## Screenshots
+
+**Landing page** — run a live scan or a one-click demo (no Azure required):
+
+![ai-offboard landing](examples/ai-offboard-landing.png)
+
+**Audit report** — findings table with severity colors, stat cards, and
+`.md` / `.html` downloads:
+
+![ai-offboard report](examples/ai-offboard-report.png)
+
+Reproduce with `offboard web` then `python scripts/capture_screenshots.py`.
+
 ## Sample output
 
 Run `offboard audit --tenant demo --mock` (or the web UI) to see a live report.
