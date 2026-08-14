@@ -94,7 +94,9 @@ A scan is successful when, against a test tenant:
 6. GitHub Actions CI passes: `ruff` + `pytest` on push/PR.
 
 ## Roadmap
-- **v1 (this spec):** read-only Entra audit + catalog + dry-run plan + report. ~2–3 focused weekends.
+- **v1 (this spec):** read-only Entra audit + catalog + dry-run plan + report. ✅ *Delivered in v0.1.0*
+- **Option B — setup wizard:** one-time `offboard setup` writes `.env`, validates connection. ✅ *Delivered in v0.1.0*
+- **Option A — local web UI:** `offboard web` serves a FastAPI dashboard. ✅ *Delivered in v0.1.0*
 - **v1b:** Google Workspace connector, logo/domain enrichment of catalog, SQLite snapshot store.
 - **v2:** `offboard execute` with an explicit approval gate (confirm list → apply → log every change). Becomes the revenue/Zero-Trust bridge.
 - **v3:** policy engine on top of the inventory → the "Zero Trust for AI" expand.
