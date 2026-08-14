@@ -5,44 +5,99 @@
 SMBs and MSPs have a loud, unfilled problem: no one can catalog the AI tools
 running in a tenant, see what data they touch, or prove on departure that
 access was revoked. Enterprise DLP vendors chase the big-org blocking market
-and skip the small-org audit-and-revoke-at-departure moment. That moment
-produces a compliance artifact an insurer, SOC2, or renewal actually accepts.
+and skip the small-org audit-and-revoke-at-departure moment. `ai-offboard`
+closes that gap with a **read-only** scanner that produces the compliance
+artifact an insurer, SOC2, or renewal actually accepts.
 
-`ai-offboard` scans a Microsoft Entra tenant (read-only), maps principals and
-apps to an AI-app catalog, flags risky AI access, and emits a plain-English
-audit report plus a dry-run revocation plan. **In v1 it writes nothing.**
+> **Read-only by design.** v1 makes zero writes: it never disables an account,
+> never revokes a token, never changes anything. It audits and reports. The
+> plan it produces is a dry-run checklist for a human to approve.
 
-## Quick start
+## What it does
+
+- Enumerates users, app assignments, and service-principal grants in a
+  Microsoft 365 tenant
+- Maps them to an AI-app catalog with **DLP-risk tiers** (high/medium/low)
+- Flags risky access: stale access on departure, MFA gaps, unused high-tier
+  seats, broad high-privilege grants
+- Emits a **dry-run revocation plan** (execute nothing)
+- Renders a plain-English **audit report** (.md + .html) an auditor can read
+
+## Try the demo now (no Azure required)
+
 ```bash
-pip install -e .
-offboard setup            # one-time connector wizard (guides, validates, writes .env)
-offboard audit --tenant <id>          # run scan to terminal
-offboard audit --tenant <id> --report # write report.md + report.html
-offboard plan --user <upn>            # dry-run: exact revoke steps, executes nothing
-offboard web              # local web UI (option A)
+pip install -e ".[web]"
+offboard web                 # local web UI, then click "Run demo scan"
+offboard audit --tenant demo --mock  # or a terminal report
 ```
 
-No tenant yet? Run the demo flow without Azure credentials:
-```bash
-offboard audit --tenant demo --mock          # terminal report
-offboard audit --tenant demo --mock --report # files
-offboard web                                 # then click "Run demo scan"
+## Sample output
+
+Run `offboard audit --tenant demo --mock` (or the web UI) to see a live report.
+A representative report renders like this:
+
+```markdown
+# AI-Offboard Audit Report
+
+- **Tenant:** demo
+- **Principals scanned:** 3
+- **App assignments:** 2
+
+| Severity | Rule | Subject | Evidence |
+| --- | --- | --- | --- |
+| medium | R1 | stale@example.com | Account is disabled in directory. |
+| high   | R2 | nomfa@example.com | Account lacks enforced MFA registration. |
+| high   | R4 | Microsoft 365 Copilot | High-privilege app has an active assignment. |
 ```
+
+## Quick start (live tenant)
+
+```bash
+pip install -e ".[web]"
+offboard setup                    # one-time wizard: guides, validates, writes .env
+offboard audit --tenant <id>             # scan to terminal
+offboard audit --tenant <id> --report    # write report.md + report.html
+offboard plan --user <upn>               # dry-run revocation steps (executes nothing)
+```
+
+See [docs/connectors.md](docs/connectors.md) for the one-time Microsoft Entra
+App Registration (least-privilege scopes + admin consent).
 
 ## v1 scope
-- Read-only Microsoft Entra ID connector (Graph)
-- AI-app catalog (`src/offboard/catalog/apps.json`) with DLP-risk tiers
-- Risk rules → findings (orphaned access, MFA gaps, unused high-tier seats, broad grants)
+
+- **Read-only** Microsoft Entra ID connector (Graph, GET-only)
+- AI-app catalog (`apps.json`) with DLP-risk tiers
+- Risk rules → findings (stale access, MFA gaps, unused high-tier seats, broad grants)
 - Dry-run revocation plan + audit report (MD + HTML)
+- Local web UI (`offboard web`)
+- Mock/demo mode (`--mock`) so anyone can evaluate with zero creds
 
-**Not in v1:** any write/execute, Google Workspace, DB, web UI, DLP/monitoring.
-See [SPEC.md](SPEC.md) for the full build spec and roadmap.
+**Not in v1:** write/execute revocation, Google Workspace connector, DB,
+multi-tenant SaaS. See [SPEC.md](SPEC.md) for the roadmap.
 
-## Security posture
-Read-only by design. v1 makes zero mutating Graph calls. See [SECURITY.md](SECURITY.md).
+## Install
+
+```bash
+# Core CLI (no web UI)
+pipx install .                        # or: pip install -e .
+
+# With the local web UI
+pip install -e ".[web]"
+```
+
+Requires Python 3.11+. The wheel ships the app catalog and web templates, so
+a normal `pip install` is whole (4 data files verified in the built wheel).
 
 ## Contributing
-The fastest way in is a one-PR `apps.json` catalog entry. See [CONTRIBUTING.md](CONTRIBUTING.md).
+
+The fastest way in is a one-PR `apps.json` catalog entry. See
+[CONTRIBUTING.md](CONTRIBUTING.md).
+
+## Security
+
+Read-only by design; v1 makes zero mutating Graph calls. See
+[SECURITY.md](SECURITY.md).
 
 ## License
-Apache-2.0
+
+Apache-2.0. See [LICENSE](LICENSE).

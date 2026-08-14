@@ -7,6 +7,7 @@ scan connector never receives secrets any other way.
 from __future__ import annotations
 
 import os
+from collections.abc import Mapping
 from dataclasses import dataclass
 
 
@@ -30,16 +31,16 @@ _ENV_MAP = {
 }
 
 
-def load_config(env: dict[str, str] | None = None) -> Config:
+def load_config(env: Mapping[str, str] | None = None) -> Config:
     """Load config from environment (real env or .env file already sourced).
     Falls back to missing values as empty strings so the wizard can detect gaps.
     """
-    env = env if env is not None else os.environ
+    source: Mapping[str, str] = env if env is not None else os.environ
     return Config(
-        client_id=env.get(_ENV_MAP["client_id"], ""),
-        client_secret=env.get(_ENV_MAP["client_secret"], ""),
-        tenant_id=env.get(_ENV_MAP["tenant_id"], ""),
-        authority=env.get(_ENV_MAP["authority"], "https://login.microsoftonline.com/common"),
+        client_id=source.get(_ENV_MAP["client_id"], ""),
+        client_secret=source.get(_ENV_MAP["client_secret"], ""),
+        tenant_id=source.get(_ENV_MAP["tenant_id"], ""),
+        authority=source.get(_ENV_MAP["authority"], "https://login.microsoftonline.com/common"),
     )
 
 

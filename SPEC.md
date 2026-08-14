@@ -99,6 +99,23 @@ A scan is successful when, against a test tenant:
 - **v2:** `offboard execute` with an explicit approval gate (confirm list → apply → log every change). Becomes the revenue/Zero-Trust bridge.
 - **v3:** policy engine on top of the inventory → the "Zero Trust for AI" expand.
 
+### Delivered since spec write (Aug 2026)
+- **Option B (usability core):** `offboard setup` interactive wizard, `audit --report` (+ `--out`), `plan`, shared `scan.py` pipeline, `config.py` + `.env.example`, MockConnector + `--mock` for Azure-free eval.
+- **Option A (local web UI):** `offboard web` — FastAPI app wrapping the same scan pipeline, demo-mode scan, findings table with severity colors, `.md`/`.html` download; localhost-only, no multi-tenant auth.
+- **Public-release hardening:** package data ships in the wheel (catalog + templates verified), Apache-2.0 LICENSE file, PEP 561 `py.typed`, ruff + mypy + pytest in CI, web-UI TestClient tests, committed `examples/ai-offboard-report.{md,html}` sample, `.env.example`.
+
+### First public release checklist
+- [x] Wheel ships runtime data (apps.json + templates) — verified in built wheel
+- [x] LICENSE (Apache-2.0) present so GitHub shows the license
+- [x] Mock/demo mode so anyone evaluates without Azure creds
+- [x] Committed sample report for proof-of-value on the landing page
+- [x] CI gates: ruff, mypy, pytest (incl. web UI TestClient tests)
+- [x] README leads with positioning + sample output
+- [x] SECURITY.md / CONTRIBUTING.md / connector docs
+- [ ] Repo made public (currently private)
+- [ ] Repo description + topics set on GitHub (needs gh/token auth)
+- [ ] Optional: PyPI publish (`pip install ai-offboard`) for widest reach
+
 ## Open-source posture
 - Apache-2.0. `README` leads with the one-line positioning + a sample screenshot of the compliance artifact. `SECURITY.md` states read-only posture in v1 (a trust differentiator reviewers check).
 - Contribution surface intentionally thin at first: an `apps.json` entry is a one-PR contribution — that's how the catalog grows without a connector-count death march.
