@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "apps": [
+    {
+      "name": "Microsoft 365 Copilot",
+      "matches": ["copilot", "m365copilot", "office365copilot"],
+      "dlp_tier": "high",
+      "notes": "Can reach Mail.Read + Files.ReadWrite.All across the tenant; verify scope + revocation on departure."
+    },
+    {
+      "name": "Microsoft Copilot Studio",
+      "matches": ["copilotstudio", "powerautomate-copilot"],
+      "dlp_tier": "high",
+      "notes": "Custom agents may carry elevated app grants; audit service principals."
+    },
+    {
+      "name": "ChatGPT Enterprise",
+      "matches": ["chatgpt", "openai"],
+      "dlp_tier": "medium",
+      "notes": "Track seat + SSO; revoke assignment on termination."
+    },
+    {
+      "name": "Claude / Anthropic (Teams/Enterprise)",
+      "matches": ["claude", "anthropic"],
+      "dlp_tier": "medium",
+      "notes": "Team seat via SSO; check MFA + last sign-in."
+    },
+    {
+      "name": "Google Gemini for Workspace",
+      "matches": ["gemini", "googlebackend"],
+      "dlp_tier": "medium",
+      "notes": "Scoped to Workspace data; confirm revocation when offboarding."
+    }
+  ]
+}
