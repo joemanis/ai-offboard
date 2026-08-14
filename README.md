@@ -15,9 +15,18 @@ audit report plus a dry-run revocation plan. **In v1 it writes nothing.**
 ## Quick start
 ```bash
 pip install -e .
-offboard audit --tenant <tenant-id>
-offboard plan --user <upn>     # dry-run: exact revoke steps, executes nothing
-offboard report                # writes report.md + report.html
+offboard setup            # one-time connector wizard (guides, validates, writes .env)
+offboard audit --tenant <id>          # run scan to terminal
+offboard audit --tenant <id> --report # write report.md + report.html
+offboard plan --user <upn>            # dry-run: exact revoke steps, executes nothing
+offboard web              # local web UI (option A)
+```
+
+No tenant yet? Run the demo flow without Azure credentials:
+```bash
+offboard audit --tenant demo --mock          # terminal report
+offboard audit --tenant demo --mock --report # files
+offboard web                                 # then click "Run demo scan"
 ```
 
 ## v1 scope

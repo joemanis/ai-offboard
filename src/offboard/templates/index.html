@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ai-offboard — AI Access Audit</title>
+  <style>
+    :root { --accent:#2563eb; --bg:#0f172a; --card:#1e293b; --text:#e2e8f0; --muted:#94a3b8; }
+    * { box-sizing:border-box; }
+    body { margin:0; font-family:system-ui,Segoe UI,Roboto,sans-serif; background:var(--bg); color:var(--text); }
+    .wrap { max-width:760px; margin:0 auto; padding:48px 24px; }
+    h1 { font-size:28px; margin:0 0 6px; }
+    .tag { color:var(--muted); margin:0 0 28px; }
+    .card { background:var(--card); border:1px solid #334155; border-radius:12px; padding:24px; margin-bottom:16px; }
+    .card h2 { margin:0 0 12px; font-size:18px; }
+    label { display:block; font-size:14px; color:var(--muted); margin:0 0 6px; }
+    input[type=text] { width:100%; padding:10px 12px; border-radius:8px; border:1px solid #334155; background:#0b1220; color:var(--text); font-size:15px; margin-bottom:14px; }
+    .row { display:flex; gap:12px; align-items:center; }
+    button { background:var(--accent); color:#fff; border:0; padding:11px 18px; border-radius:8px; font-size:15px; cursor:pointer; font-weight:600; }
+    button.secondary { background:#334155; }
+    button:hover { filter:brightness(1.1); }
+    .or { color:var(--muted); font-size:13px; margin:16px 0; text-align:center; }
+    .note { font-size:13px; color:var(--muted); margin-top:14px; }
+    code { background:#0b1220; padding:2px 6px; border-radius:6px; font-size:13px; }
+    .warn { color:#fbbf24; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>ai-offboard</h1>
+    <p class="tag">The AI tool audit + offboarding report you hand your insurance agent.</p>
+
+    <div class="card">
+      <h2>Run an audit</h2>
+      <form method="post" action="/scan">
+        <label for="tenant">Tenant ID (optional — leave blank for the demo)</label>
+        <input type="text" id="tenant" name="tenant_id" placeholder="00000000-0000-0000-0000-000000000000">
+        <input type="hidden" name="mock" value="0">
+        <button type="submit">Scan tenant (live)</button>
+      </form>
+      {% if not configured %}
+      <p class="note warn">Not configured yet. A live scan needs the credentials from
+        <code>offboard setup</code>. Use the demo below to see it work now.</p>
+      {% endif %}
+      <div class="or">— or —</div>
+      <form method="post" action="/scan">
+        <input type="hidden" name="tenant_id" value="demo">
+        <input type="hidden" name="mock" value="1">
+        <button type="submit" class="secondary">Run demo scan</button>
+      </form>
+    </div>
+
+    {% if mode %}
+    <div class="card">
+      <p class="note">Last scan: <strong>{{ mode }}</strong>. Download
+        <a href="/report.md" style="color:var(--accent)">report.md</a> or
+        <a href="/report.html" style="color:var(--accent)">report.html</a>.
+      </p>
+    </div>
+    {% endif %}
+  </div>
+</body>
+</html>
