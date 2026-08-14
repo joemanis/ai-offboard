@@ -47,6 +47,14 @@ class EntraConnector(Connector):
         self._token = result["access_token"]
         return self._token
 
+    def test_auth(self) -> bool:
+        """Acquire a token to validate credentials. Returns True on success.
+
+        Raises on failure so callers (setup wizard) can surface the cause.
+        """
+        self._auth()
+        return True
+
     def _get(self, path: str, params: dict | None = None) -> dict:
         url = f"{GRAPH_ROOT}{path}"
         headers = {"Authorization": f"Bearer {self._auth()}"}
