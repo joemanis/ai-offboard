@@ -37,8 +37,8 @@ offboard audit --tenant demo --mock  # or a terminal report
 
 ![ai-offboard landing](examples/ai-offboard-landing.png)
 
-**Audit report** — findings table with severity colors, stat cards, and
-`.md` / `.html` downloads:
+**Audit report** — stat cards, AI app inventory with DLP-risk tiers,
+per-finding remediation steps, and `.md` / `.html` downloads:
 
 ![ai-offboard report](examples/ai-offboard-report.png)
 
