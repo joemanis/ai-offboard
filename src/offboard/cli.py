@@ -2,9 +2,11 @@
 
 Commands:
   setup   one-time interactive connector setup (writes .env)
+  auth    manage interactive device-code authentication (login / status / logout)
   audit   scan a tenant and emit a report (terminal summary + optional file)
   plan    dry-run revocation plan (executes nothing)
-  web     local web UI (option A) -- via `offboard.web` module
+  doctor  pre-flight health check
+  web     local web UI
 """
 from __future__ import annotations
 
@@ -12,8 +14,12 @@ from typing import Annotated
 
 import typer
 
+from .auth import (
+    DeviceCodeAuth,
+    load_auth_state,
+)
 from .config import default_env_path, load_config, parse_env_file
-from .connectors.entra import EntraConnector
+from .connectors.factory import build_connector
 from .connectors.mock import MockConnector
 from .scan import run_scan, write_report
 from .setup import run_setup
@@ -39,10 +45,18 @@ def main(
     """Read-only AI tool audit + offboarding report for M365 tenants."""
 
 
-def _pick_connector(mock: bool, cfg) -> EntraConnector | MockConnector:
+def _pick_connector(
+    mock: bool, cfg, prefer_device_code: bool = False
+) -> MockConnector | typer.models.CommandInfo:
     if mock:
         return MockConnector()
-    return EntraConnector(cfg.client_id, cfg.client_secret, cfg.authority)
+    return build_connector(cfg, prefer_device_code=prefer_device_code)
+
+
+def _resolve_tenant_id(cfg, audit: bool = False) -> str:
+    """Resolve the tenant ID from flags, auth state, or config (in order)."""
+    state = load_auth_state()
+    return cfg.tenant_id or state.get("tenant_id", "")
 
 
 def _load_env() -> None:
@@ -52,6 +66,63 @@ def _load_env() -> None:
         if key not in __import__("os").environ:
             __import__("os").environ[key] = value
 
+
+# ---- auth sub-commands ----
+
+_auth_app = typer.Typer()
+app.add_typer(_auth_app, name="auth", help="Manage interactive device-code authentication.")
+
+
+@_auth_app.command("login")
+def auth_login() -> None:
+    """Sign in as a Microsoft 365 Global Admin via device code flow.
+
+    Opens a one-time code; paste it at https://microsoft.com/devicelogin.
+    No client secret or tenant ID required — the tenant is auto-detected.
+    """
+    _load_env()
+    cfg = load_config()
+    client_id = cfg.public_client_id or "1950a258-227b-4e31-a9cf-717495945fc2"
+    auth = DeviceCodeAuth(client_id=client_id)
+    result = auth.authenticate()
+
+    from .auth import save_auth_state
+
+    save_auth_state(result.tenant_id, "device_code")
+    typer.secho(f"Authenticated as {result.account or 'unknown'}", fg=typer.colors.GREEN)
+    typer.secho(f"Tenant: {result.tenant_id}", fg=typer.colors.GREEN)
+    typer.echo("Next: run `offboard audit` or `offboard web` to scan.")
+
+
+@_auth_app.command("status")
+def auth_status() -> None:
+    """Show current authentication state."""
+    state = load_auth_state()
+    cfg = load_config()
+    has_creds = cfg.is_complete
+
+    typer.secho("ai-offboard auth status", bold=True)
+    if state.get("mode") == "device_code":
+        typer.secho(f"  Device code login: active (tenant {state.get('tenant_id', '?')})", fg=typer.colors.GREEN)
+    elif has_creds:
+        typer.secho(f"  Client credentials: configured (tenant {cfg.tenant_id})", fg=typer.colors.GREEN)
+    else:
+        typer.secho("  No auth configured. Run `offboard auth login` or `offboard setup`.", fg=typer.colors.RED)
+        raise typer.Exit(1)
+
+
+@_auth_app.command("logout")
+def auth_logout() -> None:
+    """Clear cached tokens and sign out."""
+    from .auth import DeviceCodeAuth
+
+    cfg = load_config()
+    client_id = cfg.public_client_id or "1950a258-227b-4e31-a9cf-717495945fc2"
+    DeviceCodeAuth(client_id=client_id).logout()
+    typer.echo("Cached tokens removed.")
+
+
+# ---- core commands ----
 
 @app.command()
 def setup(
@@ -65,7 +136,9 @@ def setup(
 
 @app.command()
 def audit(
-    tenant_id: Annotated[str | None, typer.Option("--tenant", help="Entra tenant ID (defaults to env)")] = None,
+    tenant_id: Annotated[
+        str | None, typer.Option("--tenant", help="Tenant ID (defaults to auth session or config)")
+    ] = None,
     report: Annotated[bool, typer.Option("--report", help="Write report.md + report.html")] = False,
     out_dir: Annotated[str, typer.Option("--out", help="Report output directory")] = ".",
     mock: Annotated[bool, typer.Option("--mock", help="Use a demo snapshot (no Azure needed)")] = False,
@@ -74,11 +147,18 @@ def audit(
     """Scan a tenant (read-only) and produce an audit report."""
     _load_env()
     cfg = load_config()
-    if not mock and not cfg.is_complete:
-        typer.secho("Config incomplete. Run `offboard setup` first.", fg=typer.colors.RED)
-        raise typer.Exit(1)
-    tid = tenant_id or cfg.tenant_id
-    connector = _pick_connector(mock, cfg)
+    # Use the connector factory — tries device code first, then client-creds
+    try:
+        connector = _pick_connector(mock, cfg, prefer_device_code=True)
+    except RuntimeError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED)
+        raise typer.Exit(1) from exc
+
+    if mock:
+        tid = tenant_id or "demo"
+    else:
+        tid = tenant_id or _resolve_tenant_id(cfg)
+
     result = run_scan(connector, tid)
 
     if json_output:
@@ -110,17 +190,19 @@ def audit(
 @app.command()
 def plan(
     user: Annotated[str | None, typer.Option("--user", help="UPN to dry-run plan for")] = None,
-    tenant_id: Annotated[str | None, typer.Option("--tenant", help="Entra tenant ID")] = None,
+    tenant_id: Annotated[str | None, typer.Option("--tenant", help="Tenant ID (defaults to auth)")] = None,
     mock: Annotated[bool, typer.Option("--mock", help="Use a demo snapshot (no Azure needed)")] = False,
 ) -> None:
     """Run a scan and list the dry-run revocation steps (executes nothing)."""
     _load_env()
     cfg = load_config()
-    if not mock and not cfg.is_complete:
-        typer.secho("Config incomplete. Run `offboard setup` first.", fg=typer.colors.RED)
-        raise typer.Exit(1)
-    tid = tenant_id or cfg.tenant_id
-    connector = _pick_connector(mock, cfg)
+    try:
+        connector = _pick_connector(mock, cfg, prefer_device_code=True)
+    except RuntimeError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED)
+        raise typer.Exit(1) from exc
+
+    tid = tenant_id or _resolve_tenant_id(cfg) if not mock else "demo"
     result = run_scan(connector, tid)
     typer.echo(f"Scanned {tid}: {len(result.snapshot.principals)} principals, {len(result.findings)} findings.")
     typer.echo("Dry-run revocation steps:")
@@ -140,33 +222,43 @@ def web(
 
 @app.command()
 def doctor(
-    tenant_id: Annotated[str | None, typer.Option("--tenant", help="Entra tenant ID (defaults to env)")] = None,
+    tenant_id: Annotated[str | None, typer.Option("--tenant", help="Tenant ID (defaults to auth)")] = None,
 ) -> None:
-    """Pre-flight checks: .env, config, auth, and tenant reachability."""
+    """Pre-flight checks: .env, auth state, config, and Graph connectivity."""
+    from .auth import DeviceCodeAuth
+
     _load_env()
     cfg = load_config()
     checks: list[tuple[str, bool, str]] = []
 
+    # 1) Device code auth
+    dc = DeviceCodeAuth(client_id=cfg.public_client_id or "1950a258-227b-4e31-a9cf-717495945fc2")
+    if dc.has_cached_account:
+        checks.append(("device_code", True, "cached account present"))
+    else:
+        checks.append(("device_code", False, "no cached login — run `offboard auth login`"))
+
+    # 2) Config file
     env_path = default_env_path()
     has_env = __import__("os").path.exists(env_path)
     checks.append(("env_file", has_env, f".env at {env_path}" + (" present" if has_env else " missing (run `offboard setup`)")))
 
+    # 3) Client credentials (backup)
     missing = [k for k, v in [("client_id", cfg.client_id), ("client_secret", cfg.client_secret), ("tenant_id", cfg.tenant_id)] if not v]
-    config_ok = not missing
-    checks.append(("config", config_ok, "all key fields set" if config_ok else f"missing: {', '.join(missing)}"))
+    checks.append(("client_creds", not missing, "all set" if not missing else f"missing: {', '.join(missing)}"))
 
+    # 4) Auth reachability (try to get a token)
     auth_ok = False
-    auth_msg = "skipped (mock or no config)"
-    if config_ok:
+    auth_msg = "skipped"
+    if dc.has_cached_account or cfg.is_complete:
         try:
-            connector = EntraConnector(cfg.client_id, cfg.client_secret, cfg.authority)
-            token = connector._auth()
-            auth_ok = bool(token)
+            conn = _pick_connector(False, cfg, prefer_device_code=True)
+            r = conn._auth()
+            auth_ok = bool(r)
             auth_msg = "token acquired"
         except Exception as exc:  # noqa: BLE001 - surface any auth failure
             auth_msg = f"auth failed: {exc}"
-
-    checks.append(("auth", auth_ok, auth_msg))
+    checks.append(("graph_auth", auth_ok, auth_msg))
 
     typer.secho("AI-Offboard pre-flight", fg=typer.colors.CYAN, bold=True)
     all_ok = True

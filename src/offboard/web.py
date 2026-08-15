@@ -1,15 +1,8 @@
 """Local web UI (option A).
 
 A single-process FastAPI app that wraps the same `run_scan` pipeline the CLI
-uses. It serves the audit report in the browser. No multi-tenant auth, no
-hosting, no external security surface: it binds to localhost only and is meant
-to run on the admin's own machine.
-
-Pages:
-  GET  /            - landing: pick demo scan or run a live scan
-  POST /scan        - run a scan (mock or live) and render the report
-  GET  /report.md   - raw markdown report (for download)
-  GET  /report.html - html report (for download)
+uses. Adds a device-code auth flow so users can connect their M365 tenant
+with a single browser login.  Binds to localhost only.
 """
 from __future__ import annotations
 
@@ -23,9 +16,10 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from . import __version__
+from .auth import DeviceCodeAuth, load_auth_state, save_auth_state
 from .catalog.matcher import load_catalog, match_app
 from .config import load_config
-from .connectors.entra import EntraConnector
+from .connectors.factory import build_connector
 from .connectors.mock import MockConnector
 from .scan import run_scan
 
@@ -40,17 +34,19 @@ app = FastAPI(title="ai-offboard", version=__version__)
 app.mount("/static", StaticFiles(directory=_STATIC_DIR), name="static")
 
 _state: dict = {"result": None, "mode": None}
+# Active device-code flows: {thread_id: {user_code, verification_uri, event, result}}
+_flows: dict = {}
+_flow_lock = threading.Lock()
 
 
 def _connector_for(mock: bool):
     if mock:
         return MockConnector()
     cfg = load_config()
-    return EntraConnector(cfg.client_id, cfg.client_secret, cfg.authority)
+    return build_connector(cfg, prefer_device_code=True)
 
 
 def _catalog_matches(snapshot) -> list[dict]:
-    """Return the set of AI apps matched from the snapshot's assignments."""
     apps = load_catalog()
     seen: dict[str, str] = {}
     for assignment in snapshot.app_assignments:
@@ -64,6 +60,7 @@ def _catalog_matches(snapshot) -> list[dict]:
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
     cfg = load_config()
+    auth_state = load_auth_state()
     return templates.TemplateResponse(
         request,
         "index.html",
@@ -72,10 +69,75 @@ async def index(request: Request):
             "configured": cfg.is_complete,
             "mode": _state["mode"],
             "tenant_id": cfg.tenant_id,
+            "auth_connected": auth_state.get("mode") == "device_code",
+            "auth_tenant": auth_state.get("tenant_id", ""),
             "version": __version__,
             "repo": _REPO,
         },
     )
+
+
+@app.get("/auth/start")
+async def auth_start(request: Request):
+    """Initiate the device-code login flow. Returns a page with the code displayed."""
+    cfg = load_config()
+    client_id = cfg.public_client_id or "1950a258-227b-4e31-a9cf-717495945fc2"
+    dc = DeviceCodeAuth(client_id=client_id)
+    flow_info = dc.begin_web_flow()
+
+    # Store the flow + a threading.Event for polling
+
+    import threading as _th
+
+    event = _th.Event()
+    flow_id = f"flow_{id(dc)}_{_th.active_count()}"
+    with _flow_lock:
+        _flows[flow_id] = {"dc": dc, "event": event, "user_code": flow_info["user_code"]}
+
+    # Background thread: wait for the user to complete at microsoft.com/devicelogin
+    def _wait() -> None:
+        try:
+            result = dc.finish_web_flow()
+            save_auth_state(result.tenant_id, "device_code")
+            with _flow_lock:
+                _flows[flow_id]["result"] = result
+        except Exception as exc:  # noqa: BLE001
+            with _flow_lock:
+                _flows[flow_id]["error"] = str(exc)
+        finally:
+            event.set()
+
+    thread = threading.Thread(target=_wait, daemon=True)
+    thread.start()
+
+    return templates.TemplateResponse(
+        request,
+        "auth_flow.html",
+        {
+            "request": request,
+            "user_code": flow_info["user_code"],
+            "verification_uri": flow_info["verification_uri"],
+            "flow_id": flow_id,
+            "version": __version__,
+            "repo": _REPO,
+        },
+    )
+
+
+@app.get("/auth/poll")
+async def auth_poll(flow_id: str = ""):
+    """Check whether the device-code flow completed. Returns JSON."""
+    with _flow_lock:
+        flow = _flows.get(flow_id)
+        if flow is None:
+            return {"status": "unknown", "error": "no such flow"}
+        done = flow["event"].is_set()
+        if done:
+            error = flow.get("error")
+            if error:
+                return {"status": "error", "error": error}
+            return {"status": "connected", "tenant_id": flow.get("result", {}).get("tenant_id", "")}
+        return {"status": "pending", "user_code": flow["user_code"]}
 
 
 @app.post("/scan", response_class=HTMLResponse)
@@ -87,6 +149,7 @@ async def scan(request: Request, tenant_id: str = Form(""), mock: str = Form("0"
         result = run_scan(connector, tid)
         _state["result"] = result
         _state["mode"] = "demo" if use_mock else "live"
+        auth_state = load_auth_state()
         return templates.TemplateResponse(
             request,
             "report.html",
@@ -105,6 +168,7 @@ async def scan(request: Request, tenant_id: str = Form(""), mock: str = Form("0"
             },
         )
     except Exception as exc:  # noqa: BLE001 - surface scan/auth errors in the UI
+        auth_state = load_auth_state()
         return templates.TemplateResponse(
             request,
             "index.html",
@@ -113,6 +177,8 @@ async def scan(request: Request, tenant_id: str = Form(""), mock: str = Form("0"
                 "configured": load_config().is_complete,
                 "mode": _state["mode"],
                 "tenant_id": tenant_id or "",
+                "auth_connected": auth_state.get("mode") == "device_code",
+                "auth_tenant": auth_state.get("tenant_id", ""),
                 "error": f"Scan failed: {exc}",
                 "version": __version__,
                 "repo": _REPO,
@@ -132,6 +198,16 @@ async def report_html():
     if _state.get("result") is None:
         return PlainTextResponse("No scan run yet. POST /scan first.", status_code=404)
     return HTMLResponse(_state["result"].report_html)
+
+
+@app.get("/auth/logout")
+async def auth_logout():
+    cfg = load_config()
+    client_id = cfg.public_client_id or "1950a258-227b-4e31-a9cf-717495945fc2"
+    DeviceCodeAuth(client_id=client_id).logout()
+    return HTMLResponse(
+        '<meta http-equiv="refresh" content="2;url=/"><p>Signed out. Redirecting...</p>'
+    )
 
 
 def run_server(port: int = 8600, open_browser: bool = True) -> None:

@@ -17,10 +17,15 @@ class Config:
     client_secret: str
     tenant_id: str
     authority: str = "https://login.microsoftonline.com/common"
+    public_client_id: str = ""
 
     @property
     def is_complete(self) -> bool:
         return bool(self.client_id and self.client_secret and self.tenant_id)
+
+    @property
+    def device_code_ready(self) -> bool:
+        return bool(self.public_client_id)
 
 
 _ENV_MAP = {
@@ -28,6 +33,7 @@ _ENV_MAP = {
     "client_secret": "OFFBOARD_CLIENT_SECRET",
     "tenant_id": "OFFBOARD_TENANT_ID",
     "authority": "OFFBOARD_AUTHORITY",
+    "public_client_id": "OFFBOARD_PUBLIC_CLIENT_ID",
 }
 
 
@@ -41,6 +47,7 @@ def load_config(env: Mapping[str, str] | None = None) -> Config:
         client_secret=source.get(_ENV_MAP["client_secret"], ""),
         tenant_id=source.get(_ENV_MAP["tenant_id"], ""),
         authority=source.get(_ENV_MAP["authority"], "https://login.microsoftonline.com/common"),
+        public_client_id=source.get(_ENV_MAP["public_client_id"], ""),
     )
 
 
