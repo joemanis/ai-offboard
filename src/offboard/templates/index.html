@@ -12,28 +12,40 @@
     <div class="alert error">{{ error }}</div>
   {% endif %}
 
-  {% if configured %}
-    <div class="alert ok">Connected. A live scan will authenticate with your configured Entra credentials.</div>
+  {% if auth_connected %}
+    <div class="alert ok">
+      Connected to tenant <code>{{ auth_tenant }}</code>.
+      <a href="/auth/logout">Disconnect</a>
+    </div>
+  {% elif configured %}
+    <div class="alert ok">Client credentials configured for tenant <code>{{ tenant_id }}</code>.</div>
   {% else %}
-    <div class="alert warn">Not configured yet. A live scan needs credentials from
-      <code>offboard setup</code>. Run the demo to see the tool in action now.</div>
+    <div class="alert warn">
+      Not connected yet.
+      <a href="/auth/start">Connect Microsoft 365</a> (one-click login as Global Admin)
+      or run <code>offboard setup</code> for client credentials.
+    </div>
   {% endif %}
 
   <div class="card">
     <h2>Run a live audit</h2>
     <p class="sub">Scans the tenant for AI app assignments, access grants, and risk findings.</p>
     <form method="post" action="/scan" onsubmit="setLoading(this)">
-      <label for="tenant">Tenant ID (optional — defaults to your configured tenant)</label>
+      <label for="tenant">Tenant ID (optional — auto-detected when signed in)</label>
       <input type="text" id="tenant" name="tenant_id"
              placeholder="00000000-0000-0000-0000-000000000000" value="{{ tenant_id }}">
       <input type="hidden" name="mock" value="0">
-      <button class="btn" type="submit" {% if not configured %}disabled{% endif %}>
+      <button class="btn" type="submit" {% if not configured and not auth_connected %}disabled{% endif %}>
         <span class="spinner" style="display:none"></span>
-        <span class="btn-label">Scan tenant (live)</span>
+        <span class="btn-label">
+          {% if auth_connected %}Scan tenant (live){% elif configured %}Scan tenant (live){% else %}Scan tenant (live){% endif %}
+        </span>
       </button>
     </form>
-    {% if not configured %}
-      <p class="note" style="margin:10px 0 0">Disabled until you run <code>offboard setup</code>.</p>
+    {% if not configured and not auth_connected %}
+      <p class="note" style="margin:10px 0 0">
+        <a href="/auth/start">Connect Microsoft 365</a> first, or run <code>offboard setup</code>.
+      </p>
     {% endif %}
 
     <div class="or">or</div>
@@ -58,7 +70,7 @@ function setLoading(form) {
   var label = btn.querySelector(".btn-label");
   var text = label ? label.textContent : btn.textContent;
   if (spin) spin.style.display = "inline-block";
-  if (label) label.textContent = "Scannning…";
+  if (label) label.textContent = "Scanning…";
   else btn.textContent = "Scanning…";
 }
 </script>

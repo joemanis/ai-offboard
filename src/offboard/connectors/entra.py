@@ -1,51 +1,29 @@
 """Microsoft Entra ID connector (read-only, v1).
 
-Authentication uses MSAL confidential-client flow. Reads are GET-only Graph
-calls. See docs/connectors.md for required app registration and scopes.
+The connector is auth-agnostic: it takes any AuthProvider (client credentials
+for CI/service accounts, or device-code for interactive Global Admin login)
+and issues GET-only Graph calls. See docs/connectors.md for setup.
 """
 from __future__ import annotations
 
-import os
-
 import requests
-from msal import ConfidentialClientApplication
 
+from ..auth import GRAPH_ROOT, AuthProvider
 from .base import Connector, Principal, TenantSnapshot
-
-GRAPH_ROOT = "https://graph.microsoft.com/v1.0"
 
 
 class EntraConnector(Connector):
     """Scan a Microsoft 365 / Entra tenant."""
 
-    def __init__(self, client_id: str, client_secret: str, authority: str) -> None:
-        self._app = ConfidentialClientApplication(
-            client_id,
-            client_secret=client_secret,
-            authority=authority,
-        )
-        self._token: str | None = None
-
-    @classmethod
-    def from_env(cls) -> EntraConnector:
-        """Build from OFFBOARD_* env vars (see docs/connectors.md)."""
-        return cls(
-            client_id=os.environ["OFFBOARD_CLIENT_ID"],
-            client_secret=os.environ["OFFBOARD_CLIENT_SECRET"],
-            authority=os.environ.get(
-                "OFFBOARD_AUTHORITY", "https://login.microsoftonline.com/common"
-            ),
-        )
+    def __init__(self, auth: AuthProvider) -> None:
+        self._auth_provider = auth
+        self._access_token: str | None = None
 
     def _auth(self) -> str:
-        if self._token:
-            return self._token
-        scope = ["https://graph.microsoft.com/.default"]
-        result = self._app.acquire_token_for_client(scopes=scope)
-        if "access_token" not in result:
-            raise RuntimeError(f"Auth failed: {result.get('error_description')}")
-        self._token = result["access_token"]
-        return self._token
+        """Return a valid access token (cached per-instance)."""
+        if not self._access_token:
+            self._access_token = self._auth_provider.authenticate().token
+        return self._access_token
 
     def test_auth(self) -> bool:
         """Acquire a token to validate credentials. Returns True on success.
@@ -55,6 +33,17 @@ class EntraConnector(Connector):
         self._auth()
         return True
 
+    def get_tenant_id(self) -> str:
+        """Resolve the tenant id from the current auth (no user input needed)."""
+        if self._access_token:
+            from ..auth import _tenant_from_token
+
+            tid = _tenant_from_token(self._access_token)
+            if tid:
+                return tid
+        result = self._auth_provider.authenticate()
+        return result.tenant_id
+
     def _get(self, path: str, params: dict | None = None) -> dict:
         url = f"{GRAPH_ROOT}{path}"
         headers = {"Authorization": f"Bearer {self._auth()}"}
@@ -62,11 +51,12 @@ class EntraConnector(Connector):
         resp.raise_for_status()
         return resp.json()
 
-    def snapshot(self, tenant_id: str) -> TenantSnapshot:
+    def snapshot(self, tenant_id: str | None = None) -> TenantSnapshot:
+        """Scan the tenant. If tenant_id is omitted, resolve it from auth."""
+        # Resolve tenant from the *access token itself* when not provided.
+        tid = tenant_id or self.get_tenant_id()
         principals = self._users()
-        # v1 reads core user + assignment data; app grants wiring is in
-        # scanner. Keep this connector GET-only and additive.
-        return TenantSnapshot(tenant_id=tenant_id, scanned_at="", principals=principals)
+        return TenantSnapshot(tenant_id=tid or "", scanned_at="", principals=principals)
 
     def _users(self) -> list[Principal]:
         data = self._get("/users", {"$select": "id,displayName,userPrincipalName,accountEnabled"})
