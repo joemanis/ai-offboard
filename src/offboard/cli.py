@@ -147,7 +147,6 @@ def audit(
     """Scan a tenant (read-only) and produce an audit report."""
     _load_env()
     cfg = load_config()
-    # Use the connector factory — tries device code first, then client-creds
     try:
         connector = _pick_connector(mock, cfg, prefer_device_code=True)
     except RuntimeError as exc:
@@ -159,7 +158,16 @@ def audit(
     else:
         tid = tenant_id or _resolve_tenant_id(cfg)
 
-    result = run_scan(connector, tid)
+    # Live scanner progress
+    import sys as _sys
+
+    def _progress(msg: str) -> None:
+        typer.secho(f"  ⟳ {msg}", fg=typer.colors.CYAN, nl=False)
+        _sys.stdout.flush()
+
+    typer.secho(f"Scanning tenant {tid}…", fg=typer.colors.CYAN)
+    result = run_scan(connector, tid, progress_callback=_progress)
+    typer.secho("[done]", fg=typer.colors.GREEN)
 
     if json_output:
         import json as _json

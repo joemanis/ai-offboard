@@ -12,6 +12,7 @@ Wire-up order:
 """
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import UTC, datetime
 
 import requests
@@ -131,7 +132,7 @@ class EntraConnector(Connector):
                     type="user",
                     enabled=bool(u.get("accountEnabled", True)),
                     sign_in_last_seen=last_seen,
-                    mfa_state=u.get("mfaState"),  # not always populated
+                    mfa_state=u.get("mfaState"),
                 )
             )
         return out
@@ -147,8 +148,6 @@ class EntraConnector(Connector):
                     principal_id=sp["id"],
                     app_display_name=name,
                     app_role_id=None,
-                    # v1: mark all SPs as potentially privileged; the
-                    # risk rules / catalog matcher refines this.
                     is_high_privilege=sp.get("servicePrincipalType") == "Application",
                 )
             )
@@ -172,13 +171,28 @@ class EntraConnector(Connector):
     # Public entry point
     # ------------------------------------------------------------------
 
-    def snapshot(self, tenant_id: str | None = None) -> TenantSnapshot:
+    def snapshot(
+        self,
+        tenant_id: str | None = None,
+        progress_callback: Callable[[str], None] | None = None,
+    ) -> TenantSnapshot:
         tid = tenant_id or self.get_tenant_id()
         scanned_at = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
+        if progress_callback:
+            progress_callback("Fetching users…")
         raw_users = self._fetch_users()
+
+        if progress_callback:
+            progress_callback("Fetching enterprise apps (service principals)…")
         raw_sps = self._fetch_service_principals()
+
+        if progress_callback:
+            progress_callback("Fetching OAuth permission grants…")
         raw_grants = self._fetch_oauth_grants()
+
+        if progress_callback:
+            progress_callback("Running risk rules…")
 
         return TenantSnapshot(
             tenant_id=tid or "",

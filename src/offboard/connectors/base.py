@@ -57,5 +57,9 @@ class Connector(ABC):
     """Read-only tenant scanner."""
 
     @abstractmethod
-    def snapshot(self, tenant_id: str) -> TenantSnapshot:
+    def snapshot(
+        self,
+        tenant_id: str,
+        progress_callback: callable | None = None,
+    ) -> TenantSnapshot:
         """Return a read-only snapshot. MUST NOT perform any write."""

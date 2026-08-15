@@ -58,7 +58,27 @@
         <span class="btn-label">Run demo scan — no setup, instant results</span>
       </button>
     </form>
-  </div>
+      </div>
+
+      {% if mode == "demo" and demo_findings %}
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
+          <h2 style="margin:0">Sample — AI Access Audit</h2>
+          <span class="pill demo"><span class="dot"></span>pre-seeded demo</span>
+        </div>
+        <p class="sub">A demo scan is pre-loaded. Start here to see what ai-offboard produces.</p>
+        <div class="stats" style="margin:16px 0 20px">
+          <div class="stat accent"><b>{{ demo_principals }}</b><span>principals</span></div>
+          <div class="stat green"><b>{{ demo_apps }}</b><span>app assignments</span></div>
+          <div class="stat amber"><b>{{ demo_findings }}</b><span>findings</span></div>
+        </div>
+        <div class="actions">
+          <a class="btn" href="/report.md" download>Download report.md</a>
+          <a class="btn ghost" href="/report.html" download>Download report.html</a>
+          <a class="btn ghost" href="/" onclick="event.preventDefault();document.querySelector('form:has(input[value=\"1\"][name=\"mock\"]) button').click()">Re-run demo</a>
+        </div>
+      </div>
+      {% endif %}
 {% endblock %}
 
 {% block scripts %}
