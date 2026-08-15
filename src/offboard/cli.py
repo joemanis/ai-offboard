@@ -166,7 +166,7 @@ def audit(
         _sys.stdout.flush()
 
     typer.secho(f"Scanning tenant {tid}…", fg=typer.colors.CYAN)
-    result = run_scan(connector, tid, progress_callback=_progress)
+    result = run_scan(connector, tid, progress_callback=_progress, save=True)
     typer.secho("[done]", fg=typer.colors.GREEN)
 
     if json_output:
@@ -216,6 +216,54 @@ def plan(
     typer.echo("Dry-run revocation steps:")
     for finding in result.findings:
         typer.echo(f"  - [{finding.severity}] {finding.subject} ({finding.rule_id})")
+
+
+@app.command()
+def report(
+    last: Annotated[bool, typer.Option("--last", help="Re-render the last saved scan (no re-scan)")] = False,
+    out_dir: Annotated[str, typer.Option("--out", help="Report output directory")] = ".",
+) -> None:
+    """Re-render a previously saved scan without re-scanning the tenant."""
+    from .store import load_last_scan
+
+    if not last:
+        typer.echo("Usage: offboard report --last  (re-render the most recent saved scan)")
+        raise typer.Exit(1)
+
+    row = load_last_scan()
+    if row is None:
+        typer.secho("No saved scans found. Run `offboard audit` first.", fg=typer.colors.RED)
+        raise typer.Exit(1)
+
+    from .audit.risk import Finding
+    from .connectors.base import TenantSnapshot
+
+    findings = [
+        Finding(
+            rule_id=f["rule_id"],
+            severity=f["severity"],
+            subject=f["subject"],
+            evidence=f["evidence"],
+            remediation=list(f.get("remediation", [])),
+        )
+        for f in __import__("json").loads(row["findings_json"])
+    ]
+    snapshot = TenantSnapshot(
+        tenant_id=row["tenant_id"],
+        scanned_at=row["scanned_at"],
+    )
+    md_path, html_path = write_report(
+        __import__("types").SimpleNamespace(
+            snapshot=snapshot,
+            findings=findings,
+            report_md=row["report_md"],
+            report_html=row["report_html"],
+        ),
+        out_dir,
+    )
+    typer.secho(f"Re-rendered scan from {row['scanned_at']} ({row['tenant_id']})", fg=typer.colors.GREEN)
+    typer.echo(f"  {md_path}")
+    typer.echo(f"  {html_path}")
 
 
 @app.command()

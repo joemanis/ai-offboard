@@ -44,12 +44,19 @@
   <div class="card">
     <h2>Findings</h2>
     {% if findings %}
+      <div style="display:flex; flex-wrap:wrap; gap:6px; margin:0 0 12px">
+        <button class="btn ghost" style="padding:6px 12px;font-size:12px" onclick="filterFindings('all')" data-filter="all">All <small id="count-all">{{ findings|length }}</small></button>
+        <button class="btn ghost" style="padding:6px 12px;font-size:12px" onclick="filterFindings('critical')" data-filter="critical">Critical</button>
+        <button class="btn ghost" style="padding:6px 12px;font-size:12px" onclick="filterFindings('high')" data-filter="high">High</button>
+        <button class="btn ghost" style="padding:6px 12px;font-size:12px" onclick="filterFindings('medium')" data-filter="medium">Medium</button>
+        <button class="btn ghost" style="padding:6px 12px;font-size:12px" onclick="filterFindings('low')" data-filter="low">Low</button>
+      </div>
       <div class="tablewrap">
-        <table>
+        <table id="findings-table">
           <thead><tr><th>Severity</th><th>Rule</th><th>Subject</th><th>Evidence</th><th>Remediation</th></tr></thead>
           <tbody>
             {% for f in findings %}
-            <tr>
+            <tr data-severity="{{ f.severity }}">
               <td><span class="sev sev-{{ f.severity }}">{{ f.severity }}</span></td>
               <td><code>{{ f.rule_id }}</code></td>
               <td>{{ f.subject }}</td>
@@ -85,4 +92,22 @@
       <pre style="min-width:640px">{{ report_md }}</pre>
     </div>
   </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function filterFindings(severity) {
+  var rows = document.querySelectorAll("#findings-table tbody tr");
+  var btns = document.querySelectorAll("[data-filter]");
+  btns.forEach(function(b) { b.classList.toggle("active", b.getAttribute("data-filter") === severity); });
+  rows.forEach(function(r) {
+    var show = severity === "all" || r.getAttribute("data-severity") === severity;
+    r.style.display = show ? "" : "none";
+  });
+}
+window.addEventListener("DOMContentLoaded", function() { filterFindings("all"); });
+</script>
+<style>
+[data-filter].active { background: var(--accent) !important; color: var(--accent-ink) !important; font-weight: 800; }
+</style>
 {% endblock %}
