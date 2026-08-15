@@ -22,9 +22,9 @@ class ScanResult:
     report_html: str
 
 
-def run_scan(connector: Connector, tenant_id: str) -> ScanResult:
+def run_scan(connector: Connector, tenant_id: str, progress_callback: callable | None = None) -> ScanResult:
     """Run a full read-only scan and render the audit report."""
-    snapshot = connector.snapshot(tenant_id)
+    snapshot = connector.snapshot(tenant_id, progress_callback=progress_callback)
     catalog = load_catalog()
     findings = run_rules(snapshot, apps=catalog)
     return ScanResult(

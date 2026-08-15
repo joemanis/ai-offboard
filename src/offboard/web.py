@@ -39,6 +39,20 @@ _flows: dict = {}
 _flow_lock = threading.Lock()
 
 
+def _pre_seed_demo() -> None:
+    """Run a mock scan on import so the landing page shows sample results
+    immediately on first load without requiring any clicks."""
+    from .connectors.mock import MockConnector
+
+    conn = MockConnector()
+    result = run_scan(conn, "demo")
+    _state["result"] = result
+    _state["mode"] = "demo"
+
+
+_pre_seed_demo()
+
+
 def _connector_for(mock: bool):
     if mock:
         return MockConnector()
@@ -61,6 +75,10 @@ def _catalog_matches(snapshot) -> list[dict]:
 async def index(request: Request):
     cfg = load_config()
     auth_state = load_auth_state()
+    result = _state.get("result")
+    demo_findings = len(result.findings) if result else 0
+    demo_principals = len(result.snapshot.principals) if result else 0
+    demo_apps_count = len(result.snapshot.app_assignments) if result else 0
     return templates.TemplateResponse(
         request,
         "index.html",
@@ -71,6 +89,10 @@ async def index(request: Request):
             "tenant_id": cfg.tenant_id,
             "auth_connected": auth_state.get("mode") == "device_code",
             "auth_tenant": auth_state.get("tenant_id", ""),
+            "demo_findings": demo_findings,
+            "demo_principals": demo_principals,
+            "demo_apps": demo_apps_count,
+            "report_md": result.report_md if result else "",
             "version": __version__,
             "repo": _REPO,
         },

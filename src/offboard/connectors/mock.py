@@ -40,5 +40,5 @@ class MockConnector(Connector):
             ],
         )
 
-    def snapshot(self, tenant_id: str) -> TenantSnapshot:
-        return self._tenants[tenant_id]
+    def snapshot(self, tenant_id: str, progress_callback: callable | None = None) -> TenantSnapshot:
+            return self._tenants[tenant_id]

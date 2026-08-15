@@ -13,6 +13,9 @@ def test_landing_page_loads():
     # Polished landing: hero + stylesheet linked
     assert "Audit your AI access" in resp.text
     assert 'href="/static/style.css"' in resp.text
+    # Pre-seeded demo sample report
+    assert "pre-seeded demo" in resp.text
+    assert "Sample — AI Access Audit" in resp.text
 
 
 def test_demo_scan_renders_findings():
