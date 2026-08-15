@@ -26,19 +26,43 @@ def disabled_stale_user(finding: Finding) -> None:
 
 
 # Scopes that, when granted, let an app reach broad tenant data.
+# Both Graph-style short names and Google OAuth URL forms are matched
+# (see _normalize_scope).
 HIGH_PRIVILEGE_SCOPES = frozenset(
     {
         "mail.read",
         "mail.send",
+        "mail",
+        "mail.readonly",
         "files.read.all",
         "files.readwrite.all",
+        "files",
+        "drive",
+        "docs",
         "directory.readwrite.all",
+        "directory.readonly",
         "user.read.all",
         "group.read.all",
         "subscribedskus.read.all",
         "channel.read.all",
+        "admin.directory.user.readonly",
+        "admin.directory.group.readonly",
     }
 )
+
+
+def _normalize_scope(scope: str) -> str:
+    """Reduce a scope to a comparable key.
+
+    Google OAuth URLs like
+    https://www.googleapis.com/auth/mail.readonly become "mail.readonly";
+    Graph short names like "Mail.Read" become "mail.read".
+    """
+    key = scope.strip().lower()
+    if "googleapis.com/auth/" in key:
+        key = key.rsplit("/auth/", 1)[1]
+    key = key.rstrip("/")
+    return key
 
 
 def rule_stale_access(principal: Principal, no_signin_days: int = 90) -> Finding | None:
@@ -109,7 +133,7 @@ def rule_high_privilege_app(
 
 def rule_high_privilege_grant(grant: PermissionGrant) -> Finding | None:
     """Rule 5: OAuth grant requesting sensitive delegated scopes."""
-    granted = {s.strip().lower() for s in grant.scope.replace(" ", " ").split(" ") if s.strip()}
+    granted = {_normalize_scope(s) for s in grant.scope.split(" ") if s.strip()}
     hits = sorted(granted & HIGH_PRIVILEGE_SCOPES)
     if hits:
         return Finding(

@@ -29,16 +29,27 @@ def match_app(name: str, apps: list[dict[str, Any]] | None = None) -> CatalogEnt
     """Return the best matched catalog entry for a principal/app name.
 
     Matches if any `matches` substring appears case-insensitively in `name`.
-    Returns the highest-tier match; None if unmatched.
+    Scoring: longest (most specific) substring match wins, with DLP tier as
+    tiebreaker. This prevents e.g. "GitHub Copilot" from being swallowed by
+    the generic "copilot" entry.
     """
     apps = apps if apps is not None else load_catalog()
     best: dict[str, Any] | None = None
+    best_len = 0
     for entry in apps:
-        if any(m.lower() in name.lower() for m in entry["matches"]) and (
-            best is None
-            or _tier_rank(entry["dlp_tier"]) > _tier_rank(best["dlp_tier"])
-        ):
-            best = entry
+        for m in entry["matches"]:
+            if m.lower() not in name.lower():
+                continue
+            mlen = len(m)
+            same_len_higher_tier = (
+                best is not None
+                and mlen == best_len
+                and _tier_rank(entry["dlp_tier"]) > _tier_rank(best["dlp_tier"])
+            )
+            if mlen > best_len or same_len_higher_tier:
+                best = entry
+                best_len = mlen
+                break
     if best is None:
         return None
     return CatalogEntry(name=best["name"], dlp_tier=best["dlp_tier"], notes=best["notes"])

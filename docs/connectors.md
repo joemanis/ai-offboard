@@ -1,90 +1,103 @@
-# Microsoft Entra ID Connector Setup
+# Connector Setup
 
-`ai-offboard` reads a tenant through the Microsoft Graph API. This guide tells
-you exactly how to register the app, grant the least-privilege permissions it
-needs, and wire it to the CLI. **The scanner is read-only**: it only ever
-issues `GET` requests to Graph. Follow these steps once per tenant you scan.
+`ai-offboard` reads a tenant through either the Microsoft Graph API (Entra ID)
+or the Admin SDK Directory API (Google Workspace). The scanner is **read-only**:
+it only ever issues `GET` requests. This guide covers setup for both.
+
+---
+
+## Microsoft Entra ID Connector Setup
+
+Follow these steps once per tenant you scan.
 
 > **Security note:** v1 performs no writes. Grant only the scopes below.
 > Do not add `Mail.ReadWrite`, `Files.ReadWrite`, or any `*.All` write scope.
 
-## 1. Register the app (Azure portal)
+### Option A — interactive device-code login (recommended, no App Registration)
+
+```bash
+offboard auth login      # copy the code → microsoft.com/devicelogin → sign in as Global Admin
+offboard audit           # tenant ID is auto-detected from the token
+```
+
+No client secrets, no tenant ID entry. Requires the tenant to allow device-code
+flows (default in the Microsoft Entra admin center for most tenants).
+
+### Option B — App Registration (CI / service account)
 
 1. Sign in to the [Azure portal](https://portal.azure.com) as an admin or
    Global Administrator for the tenant you want to scan.
 2. Go to **Microsoft Entra ID → App registrations → New registration**.
-3. Give it a name, e.g. `ai-offboard-scanner`.
-4. **Supported account types:** leave the default ("Accounts in this
-   organizational directory only") for a single-tenant scanner.
-5. **Redirect URI:** leave blank (this is a confidential client used by a CLI,
-   not a browser app).
-6. Click **Register**, then copy the **Application (client) ID** and the
-   **Directory (tenant) ID** — you'll need both.
+3. Name it `ai-offboard`, choose "Accounts in this organizational directory
+   only", and register.
+4. Under **Certificates & secrets**, create a client secret and copy the value.
+5. Grant least-privilege delegated permissions under **API permissions →
+   Add a permission → Microsoft Graph → Delegated permissions**:
+   - `User.Read.All`
+   - `Group.Read.All`
+   - `Application.Read.All`
 
-## 2. Create a client secret
+   **Do not grant `Directory.ReadWrite.All` or any write scope.**
+6. Copy the **Application (client) ID** and **Tenant ID**.
 
-1. In the app registration, go to **Certificates & secrets → New client secret**.
-2. Give it a description and an expiry (90 days is a sensible default).
-3. **Copy the secret value immediately** — it's shown once and never again.
-   Store it somewhere safe; it will go into an environment variable, never
-   into source control.
-
-## 3. Grant the API permissions
-
-In the app registration, go to **API permissions → Add a permission →
-Microsoft Graph → Application permissions**, and add exactly these:
-
-| Permission | Purpose | Required? |
-| --- | --- | --- |
-| `User.Read.All` | Read user list, account enabled state | Yes |
-| `Group.Read.All` | Read group membership and app assignments | Yes |
-| `Application.Read.All` | Read service principals and permission grants | Yes |
-| `Directory.Read.All` | Read directory data for grants and licensing | Recommended |
-| `AuditLog.Read.All` | Read `signInActivity` for last-sign-in heuristics | Recommended |
-
-Then click **Grant admin consent** for the tenant. Without admin consent the
-scanner will 403 on Graph calls.
-
-> **Why not a delegated (`User.Read`) scope?** The scanner audits the whole
-> tenant, not just the signed-in user. It needs application-level access.
-> That's also why the least-privilege scopes above matter.
-
-## 4. Wire the CLI
-
-Set four environment variables, then run the CLI:
+Then wire the CLI:
 
 ```bash
-export OFFBOARD_CLIENT_ID="<Application (client) ID>"
-export OFFBOARD_CLIENT_SECRET="<client secret value>"
-export OFFBOARD_AUTHORITY="https://login.microsoftonline.com/<Directory (tenant) ID>"
-export OFFBOARD_TENANT_ID="<Directory (tenant) ID>"   # scanned tenant
-
-offboard audit --tenant "$OFFBOARD_TENANT_ID"
+offboard setup                    # guides + validates + writes .env
+offboard audit --tenant <id>      # scan to terminal
+offboard audit --tenant <id> --report   # write report.md + report.html
 ```
 
-On Windows (PowerShell):
+### Trouble
 
-```powershell
-$env:OFFBOARD_CLIENT_ID = "<Application (client) ID>"
-$env:OFFBOARD_CLIENT_SECRET = "<client secret value>"
-$env:OFFBOARD_AUTHORITY = "https://login.microsoftonline.com/<Directory (tenant) ID>"
-$env:OFFBOARD_TENANT_ID = "<Directory (tenant) ID>"
-offboard audit --tenant $env:OFFBOARD_TENANT_ID
+| Symptom | Cause / fix |
+| --- | --- |
+| `AADSTS700016 Application not found` | Wrong client ID or tenant ID in `.env`. |
+| `AADSTS65001 consent required` | Admin must grant consent: **API permissions → Grant admin consent**. |
+| `AADSTS70011 scope invalid` | Public client flow disabled; enable under **Authentication → Allow public client flows**. |
+
+---
+
+## Google Workspace Connector Setup
+
+The Workspace connector reads users + their OAuth-connected apps through the
+Admin SDK Directory API (`offboard audit --workspace`). It maps each user's
+granted third-party apps (ChatGPT, Fireflies, Zapier, …) into the same risk
+rules as the Entra connector.
+
+> **Security note:** the Directory API is read-only here. We only call
+> `GET /users` and `GET /users/{key}/tokens`.
+
+### Setup (service account with domain-wide delegation)
+
+1. In the [Google Cloud Console](https://console.cloud.google.com), create a
+   project, enable the **Admin SDK API**, and create a **service account**.
+2. Download the service account JSON key.
+3. In **Google Admin console → Security → Access and data control → Domain
+   wide delegation**, authorize that service account's **Client ID** with the
+   scope `https://www.googleapis.com/auth/admin.directory.user.readonly`.
+4. Note the email of an admin account to impersonate (e.g.
+   `admin@yourdomain.com`).
+
+Then:
+
+```bash
+export GOOGLE_SERVICE_ACCOUNT_JSON=/path/to/service-account.json
+export OFFBOARD_GOOGLE_ADMIN=admin@yourdomain.com
+offboard audit --workspace       # scan the Workspace tenant
 ```
 
-## 5. Verify it works
+For a direct token (short-lived, e.g. from OAuth playground):
 
-Run `offboard audit --tenant <id>`. A successful run prints a principal count
-and exits 0. If you see a `403 Authorization_RequestDenied`, re-check admin
-consent in step 3. If you see `AADSTS700016`, double-check the client ID and
-tenant ID.
+```bash
+export GOOGLE_ACCESS_TOKEN=ya29...
+offboard audit --workspace
+```
 
-## Troubleshooting
+All existing outputs work: `--report`, `--json`, `--csv`, and the web UI.
 
-- **`403 Authorization_RequestDenied`** — permissions were added but admin
-  consent wasn't granted, or the scope list doesn't match what's consented.
-- **`AADSTS7000215` / "invalid client secret"** — the secret was mistyped or
-  expired. Create a new one in step 2.
-- **Empty results you expected to be populated** — `signInActivity` requires
-  the `AuditLog.Read.All` scope and a licensed user; unlicensed users return
-  no value. Treat missing dates as "unknown," not "never."
+### Scope note
+
+The Workspace connector only reads `admin.directory.user.readonly` plus the
+**tokens** endpoint (which lists third-party OAuth grants). There is no write
+path — `offboard execute` remains Entra-only in this release.

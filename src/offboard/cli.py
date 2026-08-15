@@ -272,10 +272,22 @@ def audit(
     json_output: Annotated[bool, typer.Option("--json", help="Emit findings as JSON (stdout)")] = False,
     csv_output: Annotated[bool, typer.Option("--csv", help="Write findings to CSV (MSP tooling friendly)")] = False,
     audit_all: Annotated[bool, typer.Option("--all", help="Scan every registered tenant (MSP mode)")] = False,
+    workspace: Annotated[bool, typer.Option("--workspace", help="Scan a Google Workspace tenant instead of Entra")] = False,
 ) -> None:
     """Scan a tenant (read-only) and produce an audit report."""
     _load_env()
     cfg = load_config()
+    if workspace:
+        from .connectors.factory import build_workspace_connector
+
+        ws_connector = build_workspace_connector(cfg)
+        tid = tenant_id or "workspace"
+        typer.secho("Scanning Google Workspace…", fg=typer.colors.CYAN)
+        result = run_scan(ws_connector, tid, save=True)
+        typer.secho("[done]", fg=typer.colors.GREEN)
+        _emit_audit_output(result, json_output, csv_output, report, out_dir)
+        return
+
 
     if audit_all:
         from .store import list_tenants
@@ -326,7 +338,11 @@ def audit(
     typer.secho(f"Scanning tenant {tid}…", fg=typer.colors.CYAN)
     result = run_scan(connector, tid, progress_callback=_progress, save=True)
     typer.secho("[done]", fg=typer.colors.GREEN)
+    _emit_audit_output(result, json_output, csv_output, report, out_dir)
 
+
+def _emit_audit_output(result, json_output: bool, csv_output: bool, report: bool, out_dir: str) -> None:
+    """Print or write the audit result in the requested format."""
     if json_output:
         import json as _json
 
@@ -360,7 +376,6 @@ def audit(
         typer.echo(f"  {html_path}")
     else:
         typer.echo(result.report_md)
-
 
 @app.command()
 def plan(

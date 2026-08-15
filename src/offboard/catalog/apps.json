@@ -1,35 +1,251 @@
 {
-  "version": 1,
+  "version": 2,
   "apps": [
     {
       "name": "Microsoft 365 Copilot",
-      "matches": ["copilot", "m365copilot", "office365copilot"],
+      "matches": ["copilot", "m365copilot", "office365copilot", "microsoftcopilot"],
       "dlp_tier": "high",
       "notes": "Can reach Mail.Read + Files.ReadWrite.All across the tenant; verify scope + revocation on departure."
     },
     {
       "name": "Microsoft Copilot Studio",
-      "matches": ["copilotstudio", "powerautomate-copilot"],
+      "matches": ["copilot studio", "copilotstudio", "powerautomate-copilot", "microsoftcopilotstudio"],
       "dlp_tier": "high",
       "notes": "Custom agents may carry elevated app grants; audit service principals."
     },
     {
+      "name": "GitHub Copilot",
+      "matches": ["github copilot", "github-copilot", "githubcopilot"],
+      "dlp_tier": "high",
+      "notes": "Coding agent with repository read/write access; confirm seat + SSO on departure."
+    },
+    {
       "name": "ChatGPT Enterprise",
-      "matches": ["chatgpt", "openai"],
+      "matches": ["chatgpt", "openai", "openai-gpt"],
       "dlp_tier": "medium",
       "notes": "Track seat + SSO; revoke assignment on termination."
     },
     {
+      "name": "OpenAI Codex",
+      "matches": ["codex", "openai-codex"],
+      "dlp_tier": "high",
+      "notes": "Autonomous coding agent; can run scripts/change files. Review repo + secret exposure."
+    },
+    {
       "name": "Claude / Anthropic (Teams/Enterprise)",
-      "matches": ["claude", "anthropic"],
+      "matches": ["claude", "anthropic", "claude-team"],
       "dlp_tier": "medium",
       "notes": "Team seat via SSO; check MFA + last sign-in."
     },
     {
       "name": "Google Gemini for Workspace",
-      "matches": ["gemini", "googlebackend"],
+      "matches": ["gemini", "googlebackend", "google-gemini"],
       "dlp_tier": "medium",
       "notes": "Scoped to Workspace data; confirm revocation when offboarding."
+    },
+    {
+      "name": "Google Vertex AI",
+      "matches": ["vertexai", "vertex-ai"],
+      "dlp_tier": "medium",
+      "notes": "Model training/inference platform; review data access and IAM."
+    },
+    {
+      "name": "Google Jupyter / Colab Enterprise",
+      "matches": ["colab", "jupyter"],
+      "dlp_tier": "high",
+      "notes": "Notebook execution can read cloud storage; check write scope grants."
+    },
+    {
+      "name": "Amazon Q / AWS Bedrock",
+      "matches": ["amazonq", "amazon-q", "bedrock", "aws-bedrock"],
+      "dlp_tier": "medium",
+      "notes": "AWS-assisted AI; audit STS/role grants and connector access."
+    },
+    {
+      "name": "Salesforce Einstein",
+      "matches": ["einstein", "salesforce-einstein"],
+      "dlp_tier": "medium",
+      "notes": "CRM AI with broad object access; confirm revoke on offboard."
+    },
+    {
+      "name": "Slack AI / GPT integration",
+      "matches": ["slack-ai", "slackgpt", "slack gpt"],
+      "dlp_tier": "high",
+      "notes": "Can read channel history + files; high data-at-rest reach."
+    },
+    {
+      "name": "Notion AI",
+      "matches": ["notion-ai", "notion ai"],
+      "dlp_tier": "medium",
+      "notes": "Workspace docs indexed into AI; revoke member + workspace access."
+    },
+    {
+      "name": "Jira Confluence AI / Atlassian Intelligence",
+      "matches": ["atlassian", "confluence", "jira-ai", "atlassian-intelligence"],
+      "dlp_tier": "medium",
+      "notes": "Project + page content; check app-link scopes."
+    },
+    {
+      "name": "Miro AI",
+      "matches": ["miro"],
+      "dlp_tier": "low",
+      "notes": "Whiteboard AI; low data reach but seat revoke still needed."
+    },
+    {
+      "name": "Fireflies.ai",
+      "matches": ["fireflies"],
+      "dlp_tier": "high",
+      "notes": "Meeting transcription; can read calendar + recordings. Revoke + purge."
+    },
+    {
+      "name": "Otter.ai",
+      "matches": ["otter"],
+      "dlp_tier": "high",
+      "notes": "Meeting transcribe; calendar read. Revoke on departure."
+    },
+    {
+      "name": "Loom / Loom AI",
+      "matches": ["loom"],
+      "dlp_tier": "medium",
+      "notes": "Video capture; attach to workspace. Revoke + audit recordings."
+    },
+    {
+      "name": "Grammarly Business",
+      "matches": ["grammarly"],
+      "dlp_tier": "low",
+      "notes": "Writing assistant; SSO seat revoke."
+    },
+    {
+      "name": "GitLab Duo",
+      "matches": ["gitlab-duo", "gitlabduo"],
+      "dlp_tier": "medium",
+      "notes": "Code AI inside GitLab; revoke project + seat access."
+    },
+    {
+      "name": "Snyk AI",
+      "matches": ["snyk"],
+      "dlp_tier": "medium",
+      "notes": "Vuln scanner + code patches; audit org membership."
+    },
+    {
+      "name": "Perplexity Enterprise",
+      "matches": ["perplexity"],
+      "dlp_tier": "medium",
+      "notes": "Search AI; SSO seat, verify data-retention setting."
+    },
+    {
+      "name": "Jasper / Copy.ai",
+      "matches": ["jasper", "copy.ai", "copyai"],
+      "dlp_tier": "low",
+      "notes": "Marketing copy AI; low-risk but revoke seats."
+    },
+    {
+      "name": "HeyGen / Synthesia (video AI)",
+      "matches": ["heygen", "synthesia"],
+      "dlp_tier": "low",
+      "notes": "Avatar video gen; revoke seat + connections."
+    },
+    {
+      "name": "Murf / ElevenLabs (voice AI)",
+      "matches": ["murf", "elevenlabs", "eleven-labs"],
+      "dlp_tier": "medium",
+      "notes": "Voice cloning; media files may be stored. Revoke + review."
+    },
+    {
+      "name": "Zapier AI / Make AI",
+      "matches": ["zapier", "make.com", "integromat"],
+      "dlp_tier": "high",
+      "notes": "Automation glue; integrations can carry broad read/write. Audit + revoke."
+    },
+    {
+      "name": "HubSpot AI (Breeze)",
+      "matches": ["hubspot", "breeze"],
+      "dlp_tier": "medium",
+      "notes": "CRM AI; revoke portal user + connected apps."
+    },
+    {
+      "name": "Intercom Fin / AI inbox",
+      "matches": ["intercom", "fin-ai"],
+      "dlp_tier": "medium",
+      "notes": "Support inbox AI; message history reach. Revoke + purge."
+    },
+    {
+      "name": "Zendesk AI",
+      "matches": ["zendesk"],
+      "dlp_tier": "medium",
+      "notes": "Ticketing AI; revoke agent + API token."
+    },
+    {
+      "name": "Freshdesk Freddy AI",
+      "matches": ["freshdesk", "freddy"],
+      "dlp_tier": "medium",
+      "notes": "Support AI; revoke agent access."
+    },
+    {
+      "name": "Monday.com AI",
+      "matches": ["monday"],
+      "dlp_tier": "low",
+      "notes": "Work OS AI; revoke board + account."
+    },
+    {
+      "name": "Asana AI (Asana Intelligence)",
+      "matches": ["asana"],
+      "dlp_tier": "low",
+      "notes": "Project AI; revoke org membership."
+    },
+    {
+      "name": "ClickUp AI",
+      "matches": ["clickup"],
+      "dlp_tier": "low",
+      "notes": "Task AI; revoke workspace + SSO."
+    },
+    {
+      "name": "Coda AI",
+      "matches": ["coda"],
+      "dlp_tier": "medium",
+      "notes": "Docs + automation; doc content may flow to AI. Revoke + export."
+    },
+    {
+      "name": "Whisper / Deepgram (transcription API)",
+      "matches": ["whisper", "deepgram"],
+      "dlp_tier": "medium",
+      "notes": "Audio processing API; check API-key rotation on offboard."
+    },
+    {
+      "name": "Stability / Midjourney (image gen)",
+      "matches": ["stability", "midjourney", "stable-diffusion"],
+      "dlp_tier": "low",
+      "notes": "Image gen; revoke seats + API keys."
+    },
+    {
+      "name": "Ramp / Brex (finance AI)",
+      "matches": ["ramp", "brex"],
+      "dlp_tier": "high",
+      "notes": "Finance data + card spend; revoke cardholder + admin immediately."
+    },
+    {
+      "name": "Gong / Chorus (sales intelligence)",
+      "matches": ["gong", "chorus"],
+      "dlp_tier": "high",
+      "notes": "Call recording + CRM export; sensitive sales data. Revoke + data-access review."
+    },
+    {
+      "name": "DealRoom / DocSend AI (doc tracking)",
+      "matches": ["doctorsend", "dealsign", "revv"],
+      "dlp_tier": "medium",
+      "notes": "Doc sharing analytics; revoke workspace + link access."
+    },
+    {
+      "name": "Drift / Qualified (conversational AI)",
+      "matches": ["drift", "qualified"],
+      "dlp_tier": "medium",
+      "notes": "Chat AI; CRM write access. Revoke + review."
+    },
+    {
+      "name": "Power BI Copilot",
+      "matches": ["powerbi", "power-bi"],
+      "dlp_tier": "medium",
+      "notes": "BI AI; report + dataset reach. Revoke workspace access."
     }
   ]
 }
