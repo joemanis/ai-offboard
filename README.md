@@ -23,12 +23,38 @@ artifact an insurer, SOC2, or renewal actually accepts.
 - Emits a **dry-run revocation plan** (execute nothing)
 - Renders a plain-English **audit report** (.md + .html) an auditor can read
 
-## Try the demo now (no Azure required)
+## Quick start
+
+### Try the demo now (no Azure required)
 
 ```bash
 pip install -e ".[web]"
 offboard web                 # local web UI, then click "Run demo scan"
 offboard audit --tenant demo --mock  # or a terminal report
+```
+
+### Connect your tenant (interactive, recommended)
+
+One command — no App Registration, no tenant ID, no client secret. Sign in as a
+Global Administrator via Microsoft's device code flow; the tenant ID is
+automatically detected from the token:
+
+```bash
+offboard auth login         # copy the code → microsoft.com/devicelogin → done
+offboard audit              # scan your tenant
+```
+
+On subsequent runs the cached token is reused silently.
+
+### Connect your tenant (CI / service account)
+
+For automation, still supports client credentials via an Azure App Registration:
+
+```bash
+offboard setup                          # guides through App Registration + writes .env
+offboard audit --tenant <id>            # scan to terminal
+offboard audit --tenant <id> --report   # write report.md + report.html
+offboard plan --user <upn>              # dry-run revocation steps (executes nothing)
 ```
 
 ## Screenshots
@@ -63,26 +89,15 @@ A representative report renders like this:
 | high   | R4 | Microsoft 365 Copilot | High-privilege app has an active assignment. |
 ```
 
-## Quick start (live tenant)
-
-```bash
-pip install -e ".[web]"
-offboard setup                    # one-time wizard: guides, validates, writes .env
-offboard audit --tenant <id>             # scan to terminal
-offboard audit --tenant <id> --report    # write report.md + report.html
-offboard plan --user <upn>               # dry-run revocation steps (executes nothing)
-```
-
-See [docs/connectors.md](docs/connectors.md) for the one-time Microsoft Entra
-App Registration (least-privilege scopes + admin consent).
-
 ## v1 scope
 
+- **Two auth modes**: interactive device-code login (`offboard auth login`, no
+  tenant ID needed) or client credentials (CI/service accounts via App Registration).
 - **Read-only** Microsoft Entra ID connector (Graph, GET-only)
 - AI-app catalog (`apps.json`) with DLP-risk tiers
 - Risk rules → findings (stale access, MFA gaps, unused high-tier seats, broad grants)
 - Dry-run revocation plan + audit report (MD + HTML)
-- Local web UI (`offboard web`)
+- Local web UI (`offboard web`) with "Connect Microsoft 365" flow
 - Mock/demo mode (`--mock`) so anyone can evaluate with zero creds
 
 **Not in v1:** write/execute revocation, Google Workspace connector, DB,
