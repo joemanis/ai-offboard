@@ -22,17 +22,31 @@ class ScanResult:
     report_html: str
 
 
-def run_scan(connector: Connector, tenant_id: str, progress_callback: callable | None = None) -> ScanResult:
-    """Run a full read-only scan and render the audit report."""
+def run_scan(
+    connector: Connector,
+    tenant_id: str,
+    progress_callback: callable | None = None,
+    save: bool = False,
+) -> ScanResult:
+    """Run a full read-only scan and render the audit report.
+
+    When save=True the result is persisted to the local SQLite store so
+    `offboard report --last` can re-render it without re-scanning.
+    """
     snapshot = connector.snapshot(tenant_id, progress_callback=progress_callback)
     catalog = load_catalog()
     findings = run_rules(snapshot, apps=catalog)
-    return ScanResult(
+    result = ScanResult(
         snapshot=snapshot,
         findings=findings,
         report_md=render_markdown(snapshot, findings),
         report_html=render_html(snapshot, findings),
     )
+    if save:
+        from .store import save_scan
+
+        save_scan(result)
+    return result
 
 
 def write_report(result: ScanResult, out_dir: str, base: str = "ai-offboard-report") -> tuple[str, str]:
