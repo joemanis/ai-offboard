@@ -6,6 +6,8 @@ permission grants so the full scan pipeline exercises all risk rules.
 """
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from .base import AppAssignment, Connector, PermissionGrant, Principal, TenantSnapshot
 
 
@@ -40,5 +42,5 @@ class MockConnector(Connector):
             ],
         )
 
-    def snapshot(self, tenant_id: str, progress_callback: callable | None = None) -> TenantSnapshot:
+    def snapshot(self, tenant_id: str, progress_callback: Callable[[str], None] | None = None) -> TenantSnapshot:
             return self._tenants[tenant_id]

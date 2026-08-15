@@ -57,6 +57,58 @@ offboard audit --tenant <id> --report   # write report.md + report.html
 offboard plan --user <upn>              # dry-run revocation steps (executes nothing)
 ```
 
+## Power features
+
+### Execute remediation (v2 — writes to the tenant)
+
+`offboard execute` turns the audit findings into real actions, behind an
+explicit approval gate. Every mutation is appended to the local audit log:
+
+```bash
+offboard plan --tenant <id>       # review what will change (read-only)
+offboard execute --tenant <id>    # approve each step, then it applies:
+                                  #   block sign-in, revoke tokens, remove app assignment
+```
+
+Use `--yes` to skip the interactive confirmation (CI/automation), and
+`--target <upn-or-app>` to limit execution to one subject.
+
+### Scheduled recurring audits
+
+```bash
+offboard schedule add <tenant-id> --interval weekly   # daily | weekly | monthly
+offboard schedule list
+offboard schedule run-due         # drive from cron / Task Scheduler (offboard schedule run-due)
+```
+
+Reports are written to `reports/` and emailed when SMTP is configured
+(`OFFBOARD_SMTP_HOST`, `OFFBOARD_SMTP_PORT`, `OFFBOARD_SMTP_USER/PASS`,
+`OFFBOARD_MAIL_FROM`, `OFFBOARD_MAIL_TO`).
+
+### Multi-tenant (MSP mode)
+
+```bash
+offboard tenant add <tenant-id> --name "Acme Corp"
+offboard tenant list
+offboard audit --all              # sweep every registered tenant into a matrix
+```
+
+### Trend comparison
+
+```bash
+offboard audit --tenant <id>      # scan + auto-save (twice for a trend)
+offboard report --compare         # diff the last two scans: new vs resolved findings
+offboard report --last            # re-render the last saved scan
+```
+
+### Exports
+
+```bash
+offboard audit --json             # findings as JSON to stdout
+offboard audit --csv              # findings to ai-offboard-findings.csv (MSP tooling friendly)
+offboard audit --report           # markdown + html report files
+```
+
 ## Screenshots
 
 **Landing page** — run a live scan or a one-click demo (no Azure required):

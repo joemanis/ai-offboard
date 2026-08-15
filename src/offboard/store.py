@@ -30,13 +30,153 @@ CREATE TABLE IF NOT EXISTS scans (
     report_md TEXT NOT NULL,
     report_html TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS tenants (
+    tenant_id TEXT PRIMARY KEY,
+    display_name TEXT NOT NULL,
+    added_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS schedules (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    tenant_id TEXT NOT NULL,
+    schedule TEXT NOT NULL,
+    last_run TEXT
+);
+
+CREATE TABLE IF NOT EXISTS executions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    executed_at TEXT NOT NULL,
+    tenant_id TEXT NOT NULL,
+    action TEXT NOT NULL,
+    target TEXT NOT NULL,
+    status TEXT NOT NULL,
+    detail TEXT
+);
 """
+
+
+def add_tenant(tenant_id: str, display_name: str = "") -> bool:
+    """Register a tenant for multi-tenant audits. Returns True if added new."""
+    conn = _connect()
+    try:
+        cur = conn.execute(
+            "INSERT OR IGNORE INTO tenants (tenant_id, display_name, added_at) VALUES (?, ?, ?)",
+            (tenant_id, display_name or tenant_id, datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")),
+        )
+        conn.commit()
+        return cur.rowcount > 0
+    finally:
+        conn.close()
+
+
+def remove_tenant(tenant_id: str) -> bool:
+    conn = _connect()
+    try:
+        cur = conn.execute("DELETE FROM tenants WHERE tenant_id = ?", (tenant_id,))
+        conn.commit()
+        return cur.rowcount > 0
+    finally:
+        conn.close()
+
+
+def list_tenants() -> list[dict[str, str]]:
+    conn = _connect()
+    try:
+        rows = conn.execute(
+            "SELECT tenant_id, display_name, added_at FROM tenants ORDER BY display_name"
+        ).fetchall()
+        return [
+            {"tenant_id": r[0], "display_name": r[1], "added_at": r[2]}
+            for r in rows
+        ]
+    finally:
+        conn.close()
+
+
+def add_schedule(tenant_id: str, schedule: str) -> int:
+    """Register a recurring audit job. Returns the new job id."""
+    conn = _connect()
+    try:
+        cur = conn.execute(
+            "INSERT INTO schedules (tenant_id, schedule) VALUES (?, ?)",
+            (tenant_id, schedule),
+        )
+        conn.commit()
+        return cur.lastrowid or 0
+    finally:
+        conn.close()
+
+
+def list_schedules() -> list[dict[str, Any]]:
+    conn = _connect()
+    try:
+        rows = conn.execute(
+            "SELECT id, tenant_id, schedule, last_run FROM schedules ORDER BY tenant_id"
+        ).fetchall()
+        return [
+            {"id": r[0], "tenant_id": r[1], "schedule": r[2], "last_run": r[3]}
+            for r in rows
+        ]
+    finally:
+        conn.close()
+
+
+def remove_schedule(schedule_id: int) -> bool:
+    conn = _connect()
+    try:
+        cur = conn.execute("DELETE FROM schedules WHERE id = ?", (schedule_id,))
+        conn.commit()
+        return cur.rowcount > 0
+    finally:
+        conn.close()
+
+
+def touch_schedule(schedule_id: int) -> None:
+    conn = _connect()
+    try:
+        conn.execute(
+            "UPDATE schedules SET last_run = ? WHERE id = ?",
+            (datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"), schedule_id),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def log_execution(tenant_id: str, action: str, target: str, status: str, detail: str | None = None) -> int:
+    """Append a mutation to the audit log (irreversible record)."""
+    conn = _connect()
+    try:
+        cur = conn.execute(
+            "INSERT INTO executions (executed_at, tenant_id, action, target, status, detail) VALUES (?, ?, ?, ?, ?, ?)",
+            (datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"), tenant_id, action, target, status, detail),
+        )
+        conn.commit()
+        return cur.lastrowid or 0
+    finally:
+        conn.close()
+
+
+def list_executions(limit: int = 20) -> list[dict[str, str | None]]:
+    conn = _connect()
+    try:
+        rows = conn.execute(
+            "SELECT executed_at, tenant_id, action, target, status, detail FROM executions ORDER BY id DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+        return [
+            {"executed_at": r[0], "tenant_id": r[1], "action": r[2], "target": r[3], "status": r[4], "detail": r[5]}
+            for r in rows
+        ]
+    finally:
+        conn.close()
 
 
 def _connect() -> sqlite3.Connection:
     os.makedirs(_STATE_DIR, exist_ok=True)
     conn = sqlite3.connect(DB_PATH)
-    conn.execute(_SCHEMA)
+    conn.executescript(_SCHEMA)
     return conn
 
 
@@ -75,7 +215,7 @@ def save_scan(result: ScanResult) -> int:
             ),
         )
         conn.commit()
-        return int(cur.lastrowid)
+        return cur.lastrowid or 0
     finally:
         conn.close()
 
@@ -111,6 +251,38 @@ def list_scans(limit: int = 10) -> list[dict[str, Any]]:
             {"id": r[0], "tenant_id": r[1], "scanned_at": r[2], "finding_count": r[3]}
             for r in rows
         ]
+    finally:
+        conn.close()
+
+
+def load_scan_by_id(scan_id: int) -> dict[str, Any] | None:
+    """Load a specific scan by id (None if missing)."""
+    conn = _connect()
+    try:
+        row = conn.execute("SELECT * FROM scans WHERE id = ?", (scan_id,)).fetchone()
+        if row is None:
+            return None
+        cols = [d[0] for d in conn.execute("SELECT * FROM scans LIMIT 0").description]
+        return dict(zip(cols, row))
+    finally:
+        conn.close()
+
+
+def load_last_two_scans(tenant_id: str | None = None) -> list[dict[str, Any]]:
+    """Return the two most recent scans (newest first), for trend comparison."""
+    conn = _connect()
+    try:
+        if tenant_id:
+            rows = conn.execute(
+                "SELECT * FROM scans WHERE tenant_id = ? ORDER BY id DESC LIMIT 2",
+                (tenant_id,),
+            ).fetchall()
+        else:
+            rows = conn.execute("SELECT * FROM scans ORDER BY id DESC LIMIT 2").fetchall()
+        if not rows:
+            return []
+        cols = [d[0] for d in conn.execute("SELECT * FROM scans LIMIT 0").description]
+        return [dict(zip(cols, r)) for r in rows]
     finally:
         conn.close()
 

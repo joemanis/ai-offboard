@@ -19,6 +19,7 @@ from .auth import (
     load_auth_state,
 )
 from .config import default_env_path, load_config, parse_env_file
+from .connectors.entra import EntraConnector
 from .connectors.factory import build_connector
 from .connectors.mock import MockConnector
 from .scan import run_scan, write_report
@@ -47,7 +48,7 @@ def main(
 
 def _pick_connector(
     mock: bool, cfg, prefer_device_code: bool = False
-) -> MockConnector | typer.models.CommandInfo:
+) -> MockConnector | EntraConnector:
     if mock:
         return MockConnector()
     return build_connector(cfg, prefer_device_code=prefer_device_code)
@@ -57,6 +58,16 @@ def _resolve_tenant_id(cfg, audit: bool = False) -> str:
     """Resolve the tenant ID from flags, auth state, or config (in order)."""
     state = load_auth_state()
     return cfg.tenant_id or state.get("tenant_id", "")
+
+
+def _render_matrix(matrix: list[dict]) -> None:
+    """Render the multi-tenant sweep results as a table."""
+    typer.echo("")
+    typer.secho("Multi-tenant audit matrix", bold=True, fg=typer.colors.CYAN)
+    typer.echo(f"  {'Tenant':<40} {'Findings':>10} {'High/Critical':>16}")
+    typer.echo("  " + "-" * 68)
+    for row in matrix:
+        typer.echo(f"  {row['tenant']:<40} {row['findings']!s:>10} {row['high']!s:>16}")
 
 
 def _load_env() -> None:
@@ -122,7 +133,123 @@ def auth_logout() -> None:
     typer.echo("Cached tokens removed.")
 
 
-# ---- core commands ----
+# ---- tenant sub-commands ----
+
+_tenant_app = typer.Typer()
+app.add_typer(_tenant_app, name="tenant", help="Manage multi-tenant audit targets (MSP mode).")
+
+
+@_tenant_app.command("add")
+def tenant_add(
+    tenant_id: Annotated[str, typer.Argument(help="Entra tenant ID to register")],
+    name: Annotated[str | None, typer.Option("--name", help="Display name (defaults to tenant ID)")] = None,
+) -> None:
+    """Register a customer tenant for multi-tenant audits."""
+    from .store import add_tenant
+
+    added = add_tenant(tenant_id, name or "")
+    typer.secho(f"{'Added' if added else 'Already registered'} tenant {tenant_id}", fg=typer.colors.GREEN)
+
+
+@_tenant_app.command("remove")
+def tenant_remove(
+    tenant_id: Annotated[str, typer.Argument(help="Entra tenant ID to unregister")],
+) -> None:
+    """Unregister a customer tenant."""
+    from .store import remove_tenant
+
+    if remove_tenant(tenant_id):
+        typer.secho(f"Removed tenant {tenant_id}", fg=typer.colors.GREEN)
+    else:
+        typer.secho(f"Tenant {tenant_id} not found", fg=typer.colors.RED)
+        raise typer.Exit(1)
+
+
+@_tenant_app.command("list")
+def tenant_list() -> None:
+    """List registered customer tenants."""
+    from .store import list_tenants, load_last_scan
+
+    tenants = list_tenants()
+    if not tenants:
+        typer.echo("No tenants registered. Run `offboard tenant add <id>` first.")
+        return
+    for t in tenants:
+        last = load_last_scan(t["tenant_id"])
+        count = last["finding_count"] if last else "—"
+        typer.echo(f"  {t['display_name']:<40} {t['tenant_id']:<40} last findings: {count}")
+
+
+# ---- schedule sub-commands ----
+
+_schedule_app = typer.Typer()
+app.add_typer(_schedule_app, name="schedule", help="Recurring audits + report delivery.")
+
+
+@_schedule_app.command("add")
+def schedule_add(
+    tenant_id: Annotated[str, typer.Argument(help="Tenant ID to audit on a schedule")],
+    interval: Annotated[str, typer.Option("--interval", help="daily | weekly | monthly")] = "daily",
+) -> None:
+    """Register a recurring audit job."""
+    from .store import add_schedule
+
+    if interval not in ("daily", "weekly", "monthly"):
+        typer.secho("Interval must be daily, weekly, or monthly.", fg=typer.colors.RED)
+        raise typer.Exit(1)
+    job_id = add_schedule(tenant_id, interval)
+    typer.secho(f"Scheduled {interval} audit for {tenant_id} (job #{job_id})", fg=typer.colors.GREEN)
+    typer.echo("Drive it with an OS scheduler calling: offboard schedule run-due")
+
+
+@_schedule_app.command("remove")
+def schedule_remove(
+    job_id: Annotated[int, typer.Argument(help="Job ID from `offboard schedule list`")],
+) -> None:
+    """Remove a scheduled audit job."""
+    from .store import remove_schedule
+
+    if remove_schedule(job_id):
+        typer.secho(f"Removed schedule job {job_id}", fg=typer.colors.GREEN)
+    else:
+        typer.secho(f"Job {job_id} not found", fg=typer.colors.RED)
+        raise typer.Exit(1)
+
+
+@_schedule_app.command("list")
+def schedule_list() -> None:
+    """List scheduled audit jobs."""
+    from .store import list_schedules
+
+    jobs = list_schedules()
+    if not jobs:
+        typer.echo("No scheduled audits. Run `offboard schedule add <tenant> --interval daily`.")
+        return
+    for j in jobs:
+        last = j["last_run"] or "never"
+        typer.echo(f"  #{j['id']} {j['tenant_id']:<40} {j['schedule']:<10} last run: {last}")
+
+
+@_schedule_app.command("run-due")
+def schedule_run_due(
+    report_dir: Annotated[str, typer.Option("--out", help="Report directory for local delivery")] = "reports",
+    mock: Annotated[bool, typer.Option("--mock", help="Use demo snapshots (no Azure needed)")] = False,
+) -> None:
+    """Run all due scheduled audits. Call from cron / Task Scheduler."""
+    _load_env()
+    cfg = load_config()
+    connector = _pick_connector(mock, cfg, prefer_device_code=True)
+
+    from .schedule import run_due
+
+    results = run_due(cfg, connector, report_dir=report_dir)
+    if not results:
+        typer.echo("No scheduled audits due.")
+    for r in results:
+        status = "✅" if r.get("delivered") else "⚠️"
+        color = typer.colors.GREEN if r.get("delivered") else typer.colors.RED
+        typer.secho(f"  {status} {r['tenant']}: {r.get('findings', '?')} findings", fg=color)
+
 
 @app.command()
 def setup(
@@ -143,10 +270,41 @@ def audit(
     out_dir: Annotated[str, typer.Option("--out", help="Report output directory")] = ".",
     mock: Annotated[bool, typer.Option("--mock", help="Use a demo snapshot (no Azure needed)")] = False,
     json_output: Annotated[bool, typer.Option("--json", help="Emit findings as JSON (stdout)")] = False,
+    csv_output: Annotated[bool, typer.Option("--csv", help="Write findings to CSV (MSP tooling friendly)")] = False,
+    audit_all: Annotated[bool, typer.Option("--all", help="Scan every registered tenant (MSP mode)")] = False,
 ) -> None:
     """Scan a tenant (read-only) and produce an audit report."""
     _load_env()
     cfg = load_config()
+
+    if audit_all:
+        from .store import list_tenants
+
+        tenants = list_tenants()
+        if not tenants:
+            typer.secho("No tenants registered. Run `offboard tenant add <id>` first.", fg=typer.colors.RED)
+            raise typer.Exit(1)
+        typer.secho(f"Scanning {len(tenants)} tenants…", fg=typer.colors.CYAN)
+        matrix: list[dict] = []
+        for t in tenants:
+            try:
+                connector = _pick_connector(False, cfg, prefer_device_code=True)
+                result = run_scan(connector, t["tenant_id"], save=True)
+                matrix.append(
+                    {
+                        "tenant": t["display_name"],
+                        "tenant_id": t["tenant_id"],
+                        "findings": len(result.findings),
+                        "high": sum(1 for f in result.findings if f.severity in ("high", "critical")),
+                    }
+                )
+                typer.secho(f"  ✅ {t['display_name']}: {len(result.findings)} findings", fg=typer.colors.GREEN)
+            except Exception as exc:  # noqa: BLE001 - one tenant failing shouldn't kill the sweep
+                matrix.append({"tenant": t["display_name"], "tenant_id": t["tenant_id"], "findings": "ERR", "high": "—"})
+                typer.secho(f"  ⚠️  {t['display_name']}: {exc}", fg=typer.colors.RED)
+        _render_matrix(matrix)
+        return
+
     try:
         connector = _pick_connector(mock, cfg, prefer_device_code=True)
     except RuntimeError as exc:
@@ -186,6 +344,15 @@ def audit(
             indent=2,
         )
         typer.echo(output)
+    elif csv_output:
+        import os as _os
+
+        _os.makedirs(out_dir, exist_ok=True)
+        csv_path = _os.path.join(out_dir, "ai-offboard-findings.csv")
+        from .scan import write_findings_csv
+
+        write_findings_csv(result, csv_path)
+        typer.secho(f"Findings CSV written: {csv_path}", fg=typer.colors.GREEN)
     elif report:
         md_path, html_path = write_report(result, out_dir)
         typer.secho("Report written:", fg=typer.colors.GREEN)
@@ -219,18 +386,127 @@ def plan(
 
 
 @app.command()
+def execute(
+    tenant_id: Annotated[str | None, typer.Option("--tenant", help="Tenant ID (defaults to auth)")] = None,
+    target: Annotated[str | None, typer.Option("--target", help="Limit execution to one subject (UPN or app name)")] = None,
+    auto_approve: Annotated[bool, typer.Option("--yes", help="Skip the interactive confirmation prompt")] = False,
+    mock: Annotated[bool, typer.Option("--mock", help="Use a demo snapshot (no Azure needed)")] = False,
+) -> None:
+    """Apply the dry-run revocation plan (WRITES to the tenant).
+
+    WARNING: this performs real mutations. You must confirm the plan when
+    prompted (unless --yes). Every mutation is logged to the audit log.
+    """
+    _load_env()
+    cfg = load_config()
+    try:
+        connector = _pick_connector(mock, cfg, prefer_device_code=True)
+    except RuntimeError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED)
+        raise typer.Exit(1) from exc
+
+    tid = tenant_id or _resolve_tenant_id(cfg) if not mock else "demo"
+    result = run_scan(connector, tid)
+    findings = result.findings
+    if target:
+        findings = [f for f in findings if f.subject.lower() in target.lower() or target.lower() in f.subject.lower()]
+    if not findings:
+        typer.secho("No findings to execute against.", fg=typer.colors.YELLOW)
+        raise typer.Exit(0)
+
+    # Build the plan from the risk module's remediation steps
+    steps: list[tuple[str, str, str]] = []
+    for f in findings:
+        for step in f.remediation:
+            action = _remediation_to_action(step)
+            if action:
+                steps.append((action, f.subject, step))
+
+    if not steps:
+        typer.secho("No actionable steps for the current findings.", fg=typer.colors.YELLOW)
+        raise typer.Exit(0)
+
+    typer.secho("Plan to apply:", fg=typer.colors.CYAN, bold=True)
+    for action, target_name, step in steps:
+        typer.echo(f"  - [{action}] {target_name}: {step}")
+
+    if not auto_approve:
+        typer.secho("This WILL make real changes to the tenant.", fg=typer.colors.RED, bold=True)
+        confirmation = typer.prompt('Type "execute" to confirm', default="")
+        if confirmation.strip().lower() != "execute":
+            typer.secho("Aborted. No changes were made.", fg=typer.colors.RED)
+            raise typer.Exit(1)
+    else:
+        typer.secho("--yes: proceeding without interactive confirmation.", fg=typer.colors.YELLOW)
+
+    from .execute import Executor
+    from .store import log_execution
+
+    executor = Executor(connector)
+    ok = 0
+    failed = 0
+    for action, target_name, step in steps:
+        typer.echo(f"  - [{action}] {target_name}…", nl=False)
+        try:
+            outcome = executor.execute(action, target_name)
+            log_execution(tid, action, target_name, outcome.get("status", "unknown"), outcome.get("detail"))
+            if outcome.get("status") == "ok":
+                ok += 1
+                typer.secho(" ok", fg=typer.colors.GREEN)
+            else:
+                failed += 1
+                typer.secho(f" {outcome.get('status')}", fg=typer.colors.RED)
+                if outcome.get("detail"):
+                    typer.echo(f"      {outcome['detail']}")
+        except Exception as exc:  # noqa: BLE001 - log every mutation even on failure
+            failed += 1
+            log_execution(tid, action, target_name, "error", str(exc))
+            typer.secho(f" error: {exc}", fg=typer.colors.RED)
+
+    typer.secho(f"Done: {ok} applied, {failed} failed. Audit log updated.", fg=typer.colors.GREEN if failed == 0 else typer.colors.RED)
+
+
+def _remediation_to_action(step: str) -> str | None:
+    """Map a remediation sentence to an executable action."""
+    s = step.lower()
+    if "sign-in" in s or "sign in" in s or "disable" in s or "block" in s:
+        return "block_signin"
+    if "revoke" in s and ("token" in s or "session" in s or "grant" in s):
+        return "revoke_token"
+    if "assignment" in s or "remove" in s or "revoke consent" in s:
+        return "remove_assignment"
+    if "review" in s or "confirm" in s or "enforce" in s or "rotate" in s or "restrict" in s:
+        return None  # paperwork steps: not executed, logged as manual
+    return None
+
+
+@app.command()
 def report(
     last: Annotated[bool, typer.Option("--last", help="Re-render the last saved scan (no re-scan)")] = False,
+    compare: Annotated[bool, typer.Option("--compare", help="Show trend between last two scans")] = False,
+    tenant_id: Annotated[str | None, typer.Option("--tenant", help="Tenant ID to filter saved scans by")] = None,
     out_dir: Annotated[str, typer.Option("--out", help="Report output directory")] = ".",
 ) -> None:
     """Re-render a previously saved scan without re-scanning the tenant."""
-    from .store import load_last_scan
+    from .store import load_last_scan, load_last_two_scans
+
+    if compare:
+        from .compare import compare_scans, render_trend_table
+
+        rows = load_last_two_scans(tenant_id)
+        if len(rows) < 2:
+            typer.secho("Need at least two saved scans to compare. Run `offboard audit` twice.", fg=typer.colors.RED)
+            raise typer.Exit(1)
+        past, present = rows[1], rows[0]
+        deltas = compare_scans(past, present)
+        typer.echo(render_trend_table(past, present, deltas))
+        return
 
     if not last:
-        typer.echo("Usage: offboard report --last  (re-render the most recent saved scan)")
+        typer.echo("Usage: offboard report --last | --compare")
         raise typer.Exit(1)
 
-    row = load_last_scan()
+    row = load_last_scan(tenant_id)
     if row is None:
         typer.secho("No saved scans found. Run `offboard audit` first.", fg=typer.colors.RED)
         raise typer.Exit(1)
@@ -309,9 +585,13 @@ def doctor(
     if dc.has_cached_account or cfg.is_complete:
         try:
             conn = _pick_connector(False, cfg, prefer_device_code=True)
-            r = conn._auth()
-            auth_ok = bool(r)
-            auth_msg = "token acquired"
+            if not hasattr(conn, "_auth"):  # mock: nothing to verify
+                auth_ok = True
+                auth_msg = "mock connector"
+            else:
+                r = conn._auth()
+                auth_ok = bool(r)
+                auth_msg = "token acquired"
         except Exception as exc:  # noqa: BLE001 - surface any auth failure
             auth_msg = f"auth failed: {exc}"
     checks.append(("graph_auth", auth_ok, auth_msg))

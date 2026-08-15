@@ -7,6 +7,7 @@ implemented; Google Workspace lands in phase 1b behind this same interface.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from dataclasses import dataclass, field
 
 
@@ -60,6 +61,6 @@ class Connector(ABC):
     def snapshot(
         self,
         tenant_id: str,
-        progress_callback: callable | None = None,
+        progress_callback: Callable[[str], None] | None = None,
     ) -> TenantSnapshot:
         """Return a read-only snapshot. MUST NOT perform any write."""

@@ -14,7 +14,6 @@ from getpass import getpass
 import typer
 
 from .config import Config, default_env_path, parse_env_file, write_env_file
-from .connectors.entra import EntraConnector
 
 # No-beacon: validation uses the connector, which never writes.
 AUTHORITY_TEMPLATE = "https://login.microsoftonline.com/{tenant_id}"
@@ -42,7 +41,10 @@ def _validate(config: Config) -> None:
     """Try to acquire a token. Prints result; does not throw to the caller."""
     typer.echo("\n[setup] Validating connection to Microsoft Graph...")
     try:
-        conn = EntraConnector(config.client_id, config.client_secret, config.authority)
+        from .auth import ClientCredentialsAuth
+        from .connectors.entra import EntraConnector
+
+        conn = EntraConnector(ClientCredentialsAuth(config.client_id, config.client_secret, config.authority))
         conn.test_auth()
         typer.secho("[setup] OK: authenticated. The token flow works.", fg=typer.colors.GREEN)
     except Exception as exc:  # noqa: BLE001 - report any auth error clearly

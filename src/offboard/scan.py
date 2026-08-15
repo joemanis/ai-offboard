@@ -6,6 +6,7 @@ same code path.
 """
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 
 from .audit.report import render_html, render_markdown
@@ -25,7 +26,7 @@ class ScanResult:
 def run_scan(
     connector: Connector,
     tenant_id: str,
-    progress_callback: callable | None = None,
+    progress_callback: Callable[[str], None] | None = None,
     save: bool = False,
 ) -> ScanResult:
     """Run a full read-only scan and render the audit report.
@@ -63,3 +64,29 @@ def write_report(result: ScanResult, out_dir: str, base: str = "ai-offboard-repo
     with open(html_path, "w", encoding="utf-8") as fh:
         fh.write(result.report_html)
     return md_path, html_path
+
+
+def write_findings_csv(result: ScanResult, path: str) -> str:
+    """Export findings to a CSV file for ingestion into MSP tooling
+    (ConnectWise, NinjaOne, spreadsheets). Returns the path written.
+    """
+    import csv
+
+    with open(path, "w", encoding="utf-8", newline="") as fh:
+        writer = csv.writer(fh)
+        writer.writerow(
+            ["tenant_id", "scanned_at", "severity", "rule_id", "subject", "evidence", "remediation"]
+        )
+        for f in result.findings:
+            writer.writerow(
+                [
+                    result.snapshot.tenant_id,
+                    result.snapshot.scanned_at,
+                    f.severity,
+                    f.rule_id,
+                    f.subject,
+                    f.evidence,
+                    " | ".join(f.remediation),
+                ]
+            )
+    return path
