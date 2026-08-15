@@ -109,6 +109,17 @@ offboard audit --csv              # findings to ai-offboard-findings.csv (MSP to
 offboard audit --report           # markdown + html report files
 ```
 
+### Google Workspace
+
+```bash
+export GOOGLE_SERVICE_ACCOUNT_JSON=/path/to/service-account.json
+export OFFBOARD_GOOGLE_ADMIN="admin@yourdomain.com"
+offboard audit --workspace       # reads users + their OAuth-connected AI apps
+```
+
+The Workspace connector maps each user's granted third-party apps (ChatGPT,
+Fireflies, Zapier, …) into the same risk rules as the Entra connector.
+
 ## Screenshots
 
 **Landing page** — run a live scan or a one-click demo (no Azure required):
