@@ -20,10 +20,9 @@
     <ol style="line-height:1.9;margin:12px 0 18px">
       <li>Open <a href="https://portal.azure.com" target="_blank" rel="noopener">portal.azure.com</a>
           → <b>Microsoft Entra ID</b> → <b>App registrations</b> → <b>New registration</b>.</li>
-      <li><b>Name:</b> <code id="appName">ai-offboard</code>
-          <button type="button" class="copy-btn" onclick="copyText('appName', this)" title="Copy app name"
-                  style="background:none;border:1px solid var(--border);border-radius:6px;padding:2px 8px;margin-left:6px;cursor:pointer;vertical-align:middle;color:var(--text-dim)">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+      <li><b>Name:</b> <code id="appName">ai-offboard</code><button type="button" class="copy-btn" onclick="copyText('appName', this)" title="Copy app name"
+                  style="background:none;border:1px solid var(--border);border-radius:6px;padding:2px 8px;margin-left:8px;cursor:pointer;vertical-align:middle;color:var(--text-dim)">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:block"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
           </button>.
           Under <b>Supported account types</b> choose
           <b>"Multiple Entra ID tenants"</b> — the second radio option. When it expands, select
@@ -44,11 +43,11 @@
     </p>
 
     <form method="post" action="/auth/register" style="margin-top:14px">
-      <label for="client_id">Application (client) ID
-        <button type="button" class="copy-btn" onclick="copyText('client_id', this)" title="Copy client ID"
-                style="background:none;border:1px solid var(--border);border-radius:6px;padding:2px 8px;margin-left:6px;cursor:pointer;color:var(--text-dim);font-size:12px">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-          Copy
+      <label for="client_id" style="display:flex;align-items:center;gap:8px">Application (client) ID
+        <button type="button" onclick="pasteClientId(this)" title="Paste from clipboard"
+                style="background:none;border:1px solid var(--border);border-radius:6px;padding:3px 10px;cursor:pointer;color:var(--text-dim);font-size:12px">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          Paste from clipboard
         </button>
       </label>
       <input type="text" id="client_id" name="client_id" required
@@ -81,6 +80,22 @@ function copyText(id, btn) {
     navigator.clipboard.writeText(text.trim()).then(done, function() { fallbackCopy(text, done); });
   } else {
     fallbackCopy(text, done);
+  }
+}
+function pasteClientId(btn) {
+  var input = document.getElementById("client_id");
+  if (!input) return;
+  var done = function(text) {
+    input.value = (text || "").trim();
+    input.focus();
+    var original = btn.innerHTML;
+    btn.innerHTML = "✓ Pasted";
+    setTimeout(function() { btn.innerHTML = original; }, 1500);
+  };
+  if (navigator.clipboard && navigator.clipboard.readText) {
+    navigator.clipboard.readText().then(done, function() { btn.innerHTML = "Clipboard blocked — paste manually"; });
+  } else {
+    btn.innerHTML = "Clipboard blocked — paste manually (Ctrl+V)";
   }
 }
 function fallbackCopy(text, done) {
