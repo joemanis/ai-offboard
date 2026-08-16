@@ -207,7 +207,7 @@ def auth_register(
         typer.secho("Register the app (2 minutes):", fg=typer.colors.CYAN, bold=True)
         typer.echo("  1. portal.azure.com -> Microsoft Entra ID -> App registrations -> New registration")
         typer.echo("  2. Name: ai-offboard; Supported account types: 'Single tenant only - your tenant'; Register")
-        typer.echo("  3. Authentication -> Advanced settings -> Allow public client flows = Yes -> Save")
+        typer.echo("  3. Authentication (Preview) -> Settings -> Allow public client flows = set to Enabled -> Save")
         typer.echo("  4. Copy the Application (client) ID from the overview page")
         client_id = typer.prompt("Paste the Application (client) ID", default="")
 

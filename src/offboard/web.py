@@ -280,14 +280,12 @@ async def report_html():
 @app.get("/auth/register")
 async def auth_register(request: Request):
     """Page that guides the user through the one-time Azure app registration."""
-    from .provision import env_path_hint
-
     return templates.TemplateResponse(
         request,
         "auth_register.html",
         {
             "request": request,
-            "env_path": env_path_hint(),
+            "env_path": True,  # template renders a generic note, never the local path
             "version": __version__,
             "repo": _REPO,
         },

@@ -54,7 +54,7 @@ offboard audit --tenant <id> --report   # write report.md + report.html
 | --- | --- |
 | `AADSTS700016 Application not found` | Wrong client ID or tenant ID in `.env`. |
 | `AADSTS65001 consent required` | Admin must grant consent: **API permissions → Grant admin consent**. |
-| `AADSTS70011 scope invalid` | Public client flow disabled; enable under **Authentication → Allow public client flows**. |
+| `AADSTS70011 scope invalid` | Public client flow disabled; enable under **Authentication (Preview) → Settings → Allow public client flows**. |
 
 ---
 

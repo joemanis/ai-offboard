@@ -21,10 +21,11 @@
       <li>Open <a href="https://portal.azure.com" target="_blank" rel="noopener">portal.azure.com</a>
           → <b>Microsoft Entra ID</b> → <b>App registrations</b> → <b>New registration</b>.</li>
       <li><b>Name:</b> <code>ai-offboard</code>. Under <b>Supported account types</b> choose
-          <b>"Single tenant only — your tenant"</b> (the first radio option, e.g. <i>"Single tenant only –
-          Manis Co"</i>). Leave redirect URI empty. Click <b>Register</b>.</li>
-      <li>In the left menu, open <b>Authentication</b>. Under <b>Advanced settings</b> →
-          <b>Allow public client flows</b>, set to <b>Yes</b> &rarr; <b>Save</b>. (This is what enables the
+          <b>"Single tenant only — your tenant"</b> (the first radio option under that heading).
+          Leave redirect URI empty. Click <b>Register</b>.</li>
+      <li>In the left menu, open <b>Authentication (Preview)</b>. Scroll to
+          <b>Settings → Allow public client flows</b> and set it to <b>Enabled</b> (it may default
+          off — flip it if so). Then click <b>Save</b> at the top. (This is what enables the
           device-code login.)</li>
       <li>Copy the <b>Application (client) ID</b> on the overview page (a UUID like
           <code>0f0f0f0f-…</code>) and paste it below.</li>
@@ -44,8 +45,8 @@
     </form>
     {% if env_path %}
       <p class="note" style="margin-top:12px">
-        This writes <code>OFFBOARD_PUBLIC_CLIENT_ID</code> to <code>{{ env_path }}</code>.
-        It's a public identifier, not a secret — the app has no client secret.
+        This writes <code>OFFBOARD_PUBLIC_CLIENT_ID</code> to the local <code>.env</code> file next to
+        your installation. It's a public identifier, not a secret — the app has no client secret.
       </p>
     {% endif %}
     <p class="note"><a href="/">← Back to audit page</a></p>
