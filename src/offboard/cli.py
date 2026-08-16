@@ -88,13 +88,22 @@ app.add_typer(_auth_app, name="auth", help="Manage interactive device-code authe
 def auth_login() -> None:
     """Sign in as a Microsoft 365 Global Admin via device code flow.
 
-    Opens a one-time code; paste it at https://microsoft.com/devicelogin.
+    Opens a one-time code; paste it at the Microsoft login URL.
     No client secret or tenant ID required — the tenant is auto-detected.
+    Requires OFFBOARD_PUBLIC_CLIENT_ID (see `offboard auth register`).
     """
     _load_env()
     cfg = load_config()
-    client_id = cfg.public_client_id or "1950a258-227b-4e31-a9cf-717495945fc2"
-    auth = DeviceCodeAuth(client_id=client_id)
+    if not cfg.public_client_id:
+        typer.secho(
+            "No public client app configured. Register one first:\n"
+            "  offboard auth register\n"
+            "(4 clicks in the Azure portal: App registrations -> New -> Authentication ->\n"
+            " allow public client flows. Paste the Application (client) ID.)",
+            fg=typer.colors.RED,
+        )
+        raise typer.Exit(1)
+    auth = DeviceCodeAuth(client_id=cfg.public_client_id)
     result = auth.authenticate()
 
     from .auth import save_auth_state
@@ -107,16 +116,12 @@ def auth_login() -> None:
 
 @_auth_app.command("provision")
 def auth_provision() -> None:
-    """One-click setup: register a dedicated 'ai-offboard' app in your tenant.
+    """Legacy: auto-register a dedicated app via a bootstrap sign-in.
 
-    Two device-code sign-ins:
-      1. A bootstrap sign-in consents to app provisioning (Microsoft's own
-         consent screen, Application.ReadWrite.All via a well-known client).
-      2. ai-offboard creates a dedicated public-client app with only the
-         read scopes the scanner needs, writes its ID to .env as
-         OFFBOARD_PUBLIC_CLIENT_ID, then you sign in again with that app.
-
-    After this, `offboard auth login` / `offboard web` use the dedicated app.
+    NOTE: Microsoft blocks first-party bootstrap clients (AADSTS65002), so
+    the default path is `offboard auth register` (tenant-owned app, 2 min).
+    This command is kept for tenants whose signed-in token already carries
+    Application.ReadWrite.All and can provision themselves.
     """
     from .auth import DeviceCodeAuth, save_auth_state
     from .provision import (
@@ -134,7 +139,8 @@ def auth_provision() -> None:
         typer.echo("Run `offboard auth login` to sign in with it.")
         return
 
-    typer.secho("Step 1 of 2 - bootstrap sign-in (consents to app provisioning)", fg=typer.colors.CYAN, bold=True)
+    typer.secho("The quick path is `offboard auth register` (no bootstrap, 2 min).", fg=typer.colors.YELLOW)
+    typer.secho("Attempting bootstrap provisioning...", fg=typer.colors.CYAN)
     bootstrap = DeviceCodeAuth(client_id=BOOTSTRAP_CLIENT_ID)
     bootstrap_result = bootstrap.authenticate(scopes=BOOTSTRAP_SCOPES)
     typer.secho("  Bootstrap authenticated.", fg=typer.colors.GREEN)
@@ -145,8 +151,8 @@ def auth_provision() -> None:
     except Exception as exc:
         typer.secho(f"Provisioning failed: {exc}", fg=typer.colors.RED)
         typer.secho(
-            "You can still connect manually: register a public client app with "
-            "device-code flows enabled, then set OFFBOARD_PUBLIC_CLIENT_ID in your .env.",
+            "Fall back to `offboard auth register` (tenant-owned app): it avoids "
+            "the first-party bootstrap block entirely.",
             fg=typer.colors.YELLOW,
         )
         raise typer.Exit(1) from exc
@@ -155,13 +161,14 @@ def auth_provision() -> None:
     typer.secho(f"  Dedicated app registered (client ID {app_id[:8]}...)", fg=typer.colors.GREEN)
     typer.echo(f"  Saved OFFBOARD_PUBLIC_CLIENT_ID to {env_path}")
 
-    typer.secho("Step 2 of 2 - authorize read access with the dedicated app", fg=typer.colors.CYAN, bold=True)
+    typer.secho("Authorizing read access with the dedicated app...", fg=typer.colors.CYAN)
     auth = DeviceCodeAuth(client_id=app_id)
     result = auth.authenticate()
     save_auth_state(result.tenant_id, "device_code")
     typer.secho(f"Authenticated as {result.account or 'unknown'}", fg=typer.colors.GREEN)
     typer.secho(f"Tenant: {result.tenant_id}", fg=typer.colors.GREEN)
     typer.echo("Done. Run `offboard audit` or `offboard web` to scan.")
+
 
 
 @_auth_app.command("status")
@@ -181,15 +188,51 @@ def auth_status() -> None:
         raise typer.Exit(1)
 
 
+@_auth_app.command("register")
+def auth_register(
+    client_id: Annotated[str | None, typer.Option("--client-id", help="Application (client) ID from the Azure portal")] = None,
+) -> None:
+    """Register the tenant's public-client app (one-time, ~2 min).
+
+    Guides you through the 4 Azure portal clicks, then saves the
+    Application (client) ID as OFFBOARD_PUBLIC_CLIENT_ID in .env.
+    """
+    from .provision import save_public_client_id
+
+    if client_id and len(client_id) < 8:
+        typer.secho("That doesn't look like a client ID.", fg=typer.colors.RED)
+        raise typer.Exit(1)
+
+    if not client_id:
+        typer.secho("Register the app (2 minutes):", fg=typer.colors.CYAN, bold=True)
+        typer.echo("  1. portal.azure.com -> Microsoft Entra ID -> App registrations -> New registration")
+        typer.echo("  2. Name: ai-offboard; accounts in this organizational directory only; Register")
+        typer.echo("  3. Authentication -> Advanced settings -> Allow public client flows = Yes -> Save")
+        typer.echo("  4. Copy the Application (client) ID from the overview page")
+        client_id = typer.prompt("Paste the Application (client) ID", default="")
+
+    if not client_id or len(client_id) < 8:
+        typer.secho("No valid client ID provided.", fg=typer.colors.RED)
+        raise typer.Exit(1)
+
+    env_path = save_public_client_id(client_id)
+    typer.secho(f"Saved OFFBOARD_PUBLIC_CLIENT_ID to {env_path}", fg=typer.colors.GREEN)
+    typer.echo("Next: run `offboard auth login` to sign in, then `offboard audit`.")
+
+
 @_auth_app.command("logout")
 def auth_logout() -> None:
     """Clear cached tokens and sign out."""
     from .auth import DeviceCodeAuth
 
     cfg = load_config()
-    client_id = cfg.public_client_id or "1950a258-227b-4e31-a9cf-717495945fc2"
-    DeviceCodeAuth(client_id=client_id).logout()
+    if not cfg.public_client_id:
+        typer.secho("Nothing to sign out: no public client app configured.", fg=typer.colors.YELLOW)
+        return
+    DeviceCodeAuth(client_id=cfg.public_client_id).logout()
     typer.echo("Cached tokens removed.")
+
+
 
 
 # ---- tenant sub-commands ----

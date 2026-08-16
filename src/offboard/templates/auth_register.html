@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}Register the app — ai-offboard{% endblock %}
+
+{% block content %}
+  <section class="hero">
+    <h1>One-time Azure app registration</h1>
+    <p class="tag">
+      ai-offboard signs in as a Global Administrator using Microsoft's device-code
+      flow. That needs a <b>public-client app</b> in your tenant that only your
+      organization controls. Register it once (2 minutes), paste its ID, done.
+    </p>
+  </section>
+
+  {% if error %}
+    <div class="alert error">{{ error }}</div>
+  {% endif %}
+
+  <div class="card">
+    <h2>Register the app in the Azure portal</h2>
+    <ol style="line-height:1.9;margin:12px 0 18px">
+      <li>Open <a href="https://portal.azure.com" target="_blank" rel="noopener">portal.azure.com</a>
+          → <b>Microsoft Entra ID</b> → <b>App registrations</b> → <b>New registration</b>.</li>
+      <li><b>Name:</b> <code>ai-offboard</code>. Under <b>Supported account types</b> choose
+          <i>"Accounts in this organizational directory only"</i>. Leave redirect URI empty. Click <b>Register</b>.</li>
+      <li>In the left menu, open <b>Authentication</b>. Under <b>Advanced settings</b> →
+          <b>Allow public client flows</b>, set to <b>Yes</b> &rarr; <b>Save</b>. (This is what enables the
+          device-code login.)</li>
+      <li>Copy the <b>Application (client) ID</b> on the overview page (a UUID like
+          <code>0f0f0f0f-…</code>) and paste it below.</li>
+    </ol>
+    <p class="note">
+      Read scopes (<code>User.Read.All</code>, <code>Group.Read.All</code>,
+      <code>Application.Read.All</code>, <code>Directory.Read.All</code>) are requested at the
+      consent screen on first sign-in — no need to configure API permissions in the portal.
+    </p>
+
+    <form method="post" action="/auth/register" style="margin-top:14px">
+      <label for="client_id">Application (client) ID</label>
+      <input type="text" id="client_id" name="client_id" required
+             placeholder="00000000-0000-0000-0000-000000000000"
+             style="font-family:monospace">
+      <button class="btn" type="submit">Save and sign in</button>
+    </form>
+    {% if env_path %}
+      <p class="note" style="margin-top:12px">
+        This writes <code>OFFBOARD_PUBLIC_CLIENT_ID</code> to <code>{{ env_path }}</code>.
+        It's a public identifier, not a secret — the app has no client secret.
+      </p>
+    {% endif %}
+    <p class="note"><a href="/">← Back to audit page</a></p>
+  </div>
+{% endblock %}

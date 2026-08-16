@@ -1,20 +1,17 @@
 """One-click app provisioning for the device-code flow.
 
-The "polished" connect flow provisions a DEDICATED Azure AD app for the tenant
-instead of leaning on a shared default client ID:
+NOTE (verified 2026-08-16): true auto-provisioning via a third-party
+bootstrap client is blocked by Microsoft. First-party public clients
+(Azure CLI's 1950a258-227b-4e31-a9cf-717495945fc2, etc.) cannot request
+Graph scopes without preauthorization, returning AADSTS65002. So the
+supported path is: user registers a tenant-owned public-client app once
+(4 clicks in the portal; see templates/auth_register.html / the web UI),
+and ai-offboard uses it for the device-code sign-in.
 
-1. Bootstrap sign-in: DeviceCodeAuth with a well-known public client
-   (Azure CLI's) requesting `Application.ReadWrite.All`. The Global Admin
-   consents to app provisioning on Microsoft's own consent screen.
-2. provision_public_client(): uses that legitimately-acquired token to
-   create (or find) a dedicated "ai-offboard" public-client app registration
-   with ONLY the read scopes the scanner needs. The app ID is written to
-   `.env` as OFFBOARD_PUBLIC_CLIENT_ID.
-3. The real sign-in then uses the dedicated app (DeviceCodeAuth picks it up
-   via config), so consent is scoped to a tenant-owned, least-privilege app.
-
-Everything here uses Microsoft Graph v1.0 against the signed-in tenant.
-No credentials are stored beyond the .env app ID (public, not a secret).
+`provision_public_client` remains for authenticated tenants where the
+signed-in token already carries Application.ReadWrite.All (e.g. a future
+management-plane mode or a bootstrapped deploy) and is unit-tested, but it
+is NOT wired to the default Connect button flow.
 """
 from __future__ import annotations
 

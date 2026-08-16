@@ -39,6 +39,20 @@ _flows: dict = {}
 _flow_lock = threading.Lock()
 
 
+def _load_env_into_process() -> None:
+    """Merge the .env file into os.environ so the running server sees config
+    written after start (e.g. the client ID saved by /auth/register)."""
+    from .config import default_env_path, parse_env_file
+
+    path = default_env_path()
+    for key, value in parse_env_file(path).items():
+        if key not in os.environ:
+            os.environ[key] = value
+
+
+_load_env_into_process()
+
+
 def _pre_seed_demo() -> None:
     """Run a mock scan on import so the landing page shows sample results
     immediately on first load without requiring any clicks."""
@@ -130,57 +144,35 @@ async def index(request: Request):
 async def auth_start(request: Request, provision: str = "0"):
     """Initiate the device-code login flow.
 
-    - provision=1: bootstrap via a well-known public client, then create a
-      dedicated ai-offboard app registration, save it, and continue with that
-      app (two-step "Connect Microsoft 365").
-    - provision=0 (default): sign in with the already-provisioned app.
+    Requires a registered public-client app. If none is configured
+    (OFFBOARD_PUBLIC_CLIENT_ID unset), the user is sent to /auth/register
+    for the one-time Azure app registration first.
     """
-
-    from .provision import BOOTSTRAP_CLIENT_ID, BOOTSTRAP_SCOPES
-
     cfg = load_config()
-    if provision not in ("1", "true", "on") and not cfg.public_client_id:
-        # Nothing configured yet: behave like the full one-click setup.
-        provision = "1"
+    if not cfg.public_client_id and provision not in ("1", "true", "on", "0"):
+        pass  # explicit provision flag still honored by callers
+    if not cfg.public_client_id:
+        # No registered app yet: guide registration (Microsoft blocks first-party
+        # bootstrap clients with AADSTS65002, so a tenant-owned app is required).
+        return HTMLResponse('<meta http-equiv="refresh" content="0;url=/auth/register"><p>Redirecting to app registration…</p>')
 
-    if provision in ("1", "true", "on"):
-        # Phase 1: bootstrap sign-in (must be re-done every time; the bootstrap
-        # client has no durable cache we should trust for scans).
-        client_id = cfg.public_client_id or BOOTSTRAP_CLIENT_ID
-        scopes = BOOTSTRAP_SCOPES
-        phase = "provision"
-    else:
-        client_id = cfg.public_client_id
-        scopes = None
-        phase = "connect"
-
-    dc = DeviceCodeAuth(client_id=client_id)
-    flow_info = dc.begin_web_flow(scopes=scopes)
+    dc = DeviceCodeAuth(client_id=cfg.public_client_id)
+    flow_info = dc.begin_web_flow()
 
     import threading as _th
 
     event = _th.Event()
     flow_id = f"flow_{id(dc)}_{_th.active_count()}"
     with _flow_lock:
-        _flows[flow_id] = {"dc": dc, "event": event, "user_code": flow_info["user_code"], "phase": phase}
+        _flows[flow_id] = {"dc": dc, "event": event, "user_code": flow_info["user_code"], "phase": "connect"}
 
-    # Background thread: wait for the user to complete at microsoft.com/devicelogin
     def _wait() -> None:
         try:
             result = dc.finish_web_flow()
-            if phase == "provision":  # bootstrap done -> provision dedicated app
-                from .provision import provision_public_client, save_public_client_id
-
-                app_id = provision_public_client(result.token)
-                save_public_client_id(app_id)
-                with _flow_lock:
-                    _flows[flow_id]["phase"] = "provisioned"
-                    _flows[flow_id]["app_id"] = app_id
-            else:
-                save_auth_state(result.tenant_id, "device_code")
-                with _flow_lock:
-                    _flows[flow_id]["result"] = result
-                    _flows[flow_id]["phase"] = "connected"
+            save_auth_state(result.tenant_id, "device_code")
+            with _flow_lock:
+                _flows[flow_id]["result"] = result
+                _flows[flow_id]["phase"] = "connected"
         except Exception as exc:  # noqa: BLE001
             with _flow_lock:
                 _flows[flow_id]["error"] = str(exc)
@@ -198,7 +190,7 @@ async def auth_start(request: Request, provision: str = "0"):
             "user_code": flow_info["user_code"],
             "verification_uri": flow_info["verification_uri"],
             "flow_id": flow_id,
-            "phase": phase,
+            "phase": "connect",
             "version": __version__,
             "repo": _REPO,
         },
@@ -208,9 +200,6 @@ async def auth_start(request: Request, provision: str = "0"):
 @app.get("/auth/poll")
 async def auth_poll(flow_id: str = ""):
     """Check whether the device-code flow completed. Returns JSON."""
-    import os as _os
-
-
     with _flow_lock:
         flow = _flows.get(flow_id)
         if flow is None:
@@ -220,34 +209,6 @@ async def auth_poll(flow_id: str = ""):
             error = flow.get("error")
             if error:
                 return {"status": "error", "error": error}
-            phase = flow.get("phase")
-            if phase == "provisioned":
-                # Dedicated app created; start the real sign-in with it.
-                app_id = flow["app_id"]
-                dc2 = DeviceCodeAuth(client_id=app_id)
-                flow_info = dc2.begin_web_flow()  # default DEVICE_CODE_SCOPES
-                flow2_id = f"flow_{id(dc2)}_{_os.getpid()}"
-                def _wait2() -> None:
-                    try:
-                        result = dc2.finish_web_flow()
-                        save_auth_state(result.tenant_id, "device_code")
-                        with _flow_lock:
-                            _flows[flow2_id]["result"] = result
-                            _flows[flow2_id]["phase"] = "connected"
-                    except Exception as exc:  # noqa: BLE001
-                        with _flow_lock:
-                            _flows[flow2_id]["error"] = str(exc)
-                    finally:
-                        _flows[flow2_id]["event"].set()
-                with _flow_lock:
-                    _flows[flow2_id] = {"dc": dc2, "event": threading.Event(), "user_code": flow_info["user_code"], "phase": "connect"}
-                threading.Thread(target=_wait2, daemon=True).start()
-                return {
-                    "status": "reprovisioned",
-                    "user_code": flow_info["user_code"],
-                    "verification_uri": flow_info["verification_uri"],
-                    "flow_id": flow2_id,
-                }
             return {"status": "connected", "tenant_id": flow.get("result", {}).get("tenant_id", "")}
         return {"status": "pending", "user_code": flow["user_code"]}
 
@@ -316,11 +277,68 @@ async def report_html():
     return HTMLResponse(_state["result"].report_html)
 
 
+@app.get("/auth/register")
+async def auth_register(request: Request):
+    """Page that guides the user through the one-time Azure app registration."""
+    from .provision import env_path_hint
+
+    return templates.TemplateResponse(
+        request,
+        "auth_register.html",
+        {
+            "request": request,
+            "env_path": env_path_hint(),
+            "version": __version__,
+            "repo": _REPO,
+        },
+    )
+
+
+@app.post("/auth/register")
+async def auth_register_save(request: Request, client_id: str = Form("")):
+    """Save the user-provided Application (client) ID and continue to sign-in."""
+    client_id = client_id.strip()
+    if not client_id or len(client_id) < 8:
+        return templates.TemplateResponse(
+            request,
+            "auth_register.html",
+            {
+                "request": request,
+                "error": "Please paste the Application (client) ID from the Azure portal.",
+                "env_path": None,
+                "version": __version__,
+                "repo": _REPO,
+            },
+        )
+
+    from .provision import save_public_client_id
+
+    try:
+        save_public_client_id(client_id)
+        # Make the running process see it immediately (no restart needed)
+        os.environ["OFFBOARD_PUBLIC_CLIENT_ID"] = client_id
+    except Exception as exc:  # noqa: BLE001
+            return templates.TemplateResponse(
+                request,
+                "auth_register.html",
+                {
+                    "request": request,
+                    "error": f"Could not save config: {exc}",
+                    "env_path": None,
+                    "version": __version__,
+                    "repo": _REPO,
+                },
+            )
+    # Saved; continue to the normal device-code sign-in with this app.
+    return HTMLResponse('<meta http-equiv="refresh" content="1;url=/auth/start?provision=0"><p>Client ID saved. Redirecting to sign-in...</p>')
+
+
 @app.get("/auth/logout")
 async def auth_logout():
     cfg = load_config()
-    client_id = cfg.public_client_id or "1950a258-227b-4e31-a9cf-717495945fc2"
-    DeviceCodeAuth(client_id=client_id).logout()
+    if not cfg.public_client_id:
+        return HTMLResponse('<meta http-equiv="refresh" content="2;url=/"><p>Nothing to sign out. Redirecting...</p>')
+    DeviceCodeAuth(client_id=cfg.public_client_id).logout()
     return HTMLResponse(
         '<meta http-equiv="refresh" content="2;url=/"><p>Signed out. Redirecting...</p>'
     )

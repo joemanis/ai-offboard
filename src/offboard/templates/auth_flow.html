@@ -9,43 +9,29 @@
   </section>
 
   <div class="card" style="text-align:center">
-      <div style="font-size:60px;margin:18px 0 10px">🔑</div>
+    <div style="font-size:60px;margin:18px 0 10px">🔑</div>
+    <h2>Step 1: Open the login URL</h2>
+    <p class="note" style="margin:4px 0 18px;font-size:15px">
+      <a href="{{ verification_uri }}" target="_blank" rel="noopener"
+         style="font-size:17px;font-weight:700" id="loginLink">{{ verification_uri }}</a>
+      <br>or open <code>{{ verification_uri }}</code> in your browser.
+    </p>
 
-      {% if phase == "provision" %}
-      <h2>Step 1 of 2 — Register the ai-offboard app</h2>
-      <p class="note" style="margin:4px 0 18px;font-size:14px">
-        First sign-in registers a <b>dedicated, least-privilege</b> app in your tenant.
-        You'll approve app registration, then sign in once more to authorize read access.
-      </p>
-      {% else %}
-      <h2>Step 1: Open the login URL</h2>
-      {% endif %}
+    <h2 style="margin-top:22px">Step 2: Enter this code</h2>
+    <div style="font-size:42px;letter-spacing:12px;font-weight:800;background:#0d1426;border:1px solid var(--border);border-radius:12px;padding:24px;margin:10px auto;max-width:360px;font-family:monospace"
+         id="userCode">{{ user_code }}</div>
+    <p class="note" style="margin:10px 0 4px">The code expires in 15 minutes.</p>
 
-      <p class="note" style="margin:4px 0 18px;font-size:15px">
-        <a href="{{ verification_uri }}" target="_blank" rel="noopener"
-           style="font-size:17px;font-weight:700" id="loginLink">{{ verification_uri }}</a>
-        <br>or open <code>{{ verification_uri }}</code> in your browser.
-      </p>
-
-      <h2 style="margin-top:22px">Step {{ '2' if phase == 'provision' else '2' }}: Enter this code</h2>
-      <div style="font-size:42px;letter-spacing:12px;font-weight:800;background:#0d1426;border:1px solid var(--border);border-radius:12px;padding:24px;margin:10px auto;max-width:360px;font-family:monospace"
-           id="userCode">{{ user_code }}</div>
-      <p class="note" style="margin:10px 0 4px">The code expires in 15 minutes.</p>
-
-      <div style="margin-top:28px">
-        <div class="pill" id="statusPill">
-          <span class="dot" style="background:var(--amber);animation:pulse 1.2s infinite"></span>
-          Waiting for sign-in…
-        </div>
+    <div style="margin-top:28px">
+      <div class="pill" id="statusPill">
+        <span class="dot" style="background:var(--amber);animation:pulse 1.2s infinite"></span>
+        Waiting for sign-in…
       </div>
-      <p class="note" style="margin-top:12px" id="stepNote">
-        {% if phase == "provision" %}After this sign-in, ai-offboard registers its app and
-        continues automatically to the second sign-in.{% else %}Sign in to connect.{% endif %}
-      </p>
-      <p class="note" style="margin-top:12px">
-        <a href="/">← Back to audit page</a>
-      </p>
     </div>
+    <p class="note" style="margin-top:12px">
+      <a href="/">← Back to audit page</a>
+    </p>
+  </div>
 
   <style>
     @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
@@ -58,17 +44,6 @@
   var polling = true;
   var flowId = "{{ flow_id }}";
   var pollEl = document.getElementById("statusPill");
-  var codeEl = document.getElementById("userCode");
-  var linkEl = document.getElementById("loginLink");
-  var noteEl = document.getElementById("stepNote");
-  var phase = "{{ phase }}";
-
-  function showPhase2(code, uri) {
-    if (codeEl) codeEl.textContent = code;
-    if (linkEl) linkEl.textContent = uri;
-    if (noteEl) noteEl.innerHTML = "Step 2 of 2 — authorize read access with the dedicated app.";
-    pollEl.innerHTML = '<span class="dot" style="background:var(--amber);animation:pulse 1.2s infinite"></span> Waiting for second sign-in…';
-  }
 
   async function poll() {
     if (!polling) return;
@@ -79,10 +54,6 @@
         pollEl.innerHTML = '<span class="dot" style="background:var(--green)"></span> Connected!';
         polling = false;
         setTimeout(function() { window.location.href = "/"; }, 1200);
-      } else if (data.status === "reprovisioned") {
-        flowId = data.flow_id;
-        showPhase2(data.user_code, data.verification_uri);
-        setTimeout(poll, 1500);
       } else if (data.status === "error") {
         pollEl.innerHTML = '<span class="dot" style="background:var(--red)"></span> Failed: ' + data.error;
         polling = false;
