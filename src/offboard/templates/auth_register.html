@@ -20,7 +20,12 @@
     <ol style="line-height:1.9;margin:12px 0 18px">
       <li>Open <a href="https://portal.azure.com" target="_blank" rel="noopener">portal.azure.com</a>
           → <b>Microsoft Entra ID</b> → <b>App registrations</b> → <b>New registration</b>.</li>
-      <li><b>Name:</b> <code>ai-offboard</code>. Under <b>Supported account types</b> choose
+      <li><b>Name:</b> <code id="appName">ai-offboard</code>
+          <button type="button" class="copy-btn" onclick="copyText('appName', this)" title="Copy app name"
+                  style="background:none;border:1px solid var(--border);border-radius:6px;padding:2px 8px;margin-left:6px;cursor:pointer;vertical-align:middle;color:var(--text-dim)">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+          </button>.
+          Under <b>Supported account types</b> choose
           <b>"Multiple Entra ID tenants"</b> — the second radio option. (This is what the device-code
           flow requires; the read-only scopes are still approved by your admin at first sign-in.)
           Leave redirect URI empty. Click <b>Register</b>.</li>
@@ -38,7 +43,13 @@
     </p>
 
     <form method="post" action="/auth/register" style="margin-top:14px">
-      <label for="client_id">Application (client) ID</label>
+      <label for="client_id">Application (client) ID
+        <button type="button" class="copy-btn" onclick="copyText('client_id', this)" title="Copy client ID"
+                style="background:none;border:1px solid var(--border);border-radius:6px;padding:2px 8px;margin-left:6px;cursor:pointer;color:var(--text-dim);font-size:12px">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+          Copy
+        </button>
+      </label>
       <input type="text" id="client_id" name="client_id" required
              placeholder="00000000-0000-0000-0000-000000000000"
              style="font-family:monospace">
@@ -52,4 +63,35 @@
     {% endif %}
     <p class="note"><a href="/">← Back to audit page</a></p>
   </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function copyText(id, btn) {
+  var el = document.getElementById(id);
+  if (!el) return;
+  var text = el.value !== undefined ? el.value : el.textContent;
+  var done = function() {
+    var original = btn.innerHTML;
+    btn.innerHTML = "✓ Copied";
+    setTimeout(function() { btn.innerHTML = original; }, 1500);
+  };
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text.trim()).then(done, function() { fallbackCopy(text, done); });
+  } else {
+    fallbackCopy(text, done);
+  }
+}
+function fallbackCopy(text, done) {
+  var ta = document.createElement("textarea");
+  ta.value = text;
+  ta.style.position = "fixed";
+  ta.style.opacity = "0";
+  document.body.appendChild(ta);
+  ta.select();
+  try { document.execCommand("copy"); } catch (e) {}
+  document.body.removeChild(ta);
+  done();
+}
+</script>
 {% endblock %}
