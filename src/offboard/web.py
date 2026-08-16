@@ -220,7 +220,10 @@ async def auth_poll(flow_id: str = ""):
             error = flow.get("error")
             if error:
                 return {"status": "error", "error": error}
-            return {"status": "connected", "tenant_id": flow.get("result", {}).get("tenant_id", "")}
+            # result is an AuthResult dataclass (attribute access), NOT a dict
+            result = flow.get("result")
+            tenant_id = getattr(result, "tenant_id", "") if result is not None else ""
+            return {"status": "connected", "tenant_id": tenant_id}
         return {"status": "pending", "user_code": flow["user_code"]}
 
 

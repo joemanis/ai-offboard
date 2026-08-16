@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import threading
+
 from fastapi.testclient import TestClient
 
-from offboard.web import app
+from offboard.auth import AuthResult
+from offboard.web import _flow_lock, _flows, app
 
 
 def test_landing_page_loads():
@@ -79,3 +82,30 @@ def test_live_scan_rejected_when_not_configured(monkeypatch):
     # Demo path still works without config (that's the point of --mock)
     resp = client.post("/scan", data={"tenant_id": "demo", "mock": "1"})
     assert resp.status_code == 200
+
+def test_poll_connected_handles_authresult_object():
+    """Regression: the device-code thread stores an AuthResult (a dataclass),
+    not a dict; /auth/poll must read .tenant_id via attribute access, not
+    .get(). Previously this crashed with AttributeError, leaving the page
+    stuck on 'Waiting for sign-in…' even though Microsoft completed."""
+    client = TestClient(app)
+    flow_id = "flow_regression_test"
+    ev = threading.Event()
+    with _flow_lock:
+        _flows[flow_id] = {
+            "dc": None,
+            "event": ev,
+            "user_code": "TESTCODE",
+            "phase": "connect",
+            "result": AuthResult(token="tok", tenant_id="tenant-123", account="joe@example.com"),
+        }
+    ev.set()
+    try:
+        resp = client.get(f"/auth/poll?flow_id={flow_id}")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["status"] == "connected"
+        assert data["tenant_id"] == "tenant-123"
+    finally:
+        with _flow_lock:
+            _flows.pop(flow_id, None)
