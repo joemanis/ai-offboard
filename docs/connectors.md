@@ -28,8 +28,8 @@ flows (default in the Microsoft Entra admin center for most tenants).
 1. Sign in to the [Azure portal](https://portal.azure.com) as an admin or
    Global Administrator for the tenant you want to scan.
 2. Go to **Microsoft Entra ID → App registrations → New registration**.
-3. Name it `ai-offboard`, choose "Accounts in this organizational directory
-   only", and register.
+3. Name it `ai-offboard`, choose **"Single tenant only — your tenant"**
+   (the first radio option under *Supported account types*), and register.
 4. Under **Certificates & secrets**, create a client secret and copy the value.
 5. Grant least-privilege delegated permissions under **API permissions →
    Add a permission → Microsoft Graph → Delegated permissions**:
