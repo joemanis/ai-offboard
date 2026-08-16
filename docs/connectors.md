@@ -29,7 +29,8 @@ flows (default in the Microsoft Entra admin center for most tenants).
    Global Administrator for the tenant you want to scan.
 2. Go to **Microsoft Entra ID → App registrations → New registration**.
 3. Name it `ai-offboard`, choose **"Multiple Entra ID tenants"** (the second
-   radio option under *Supported account types*). Single-tenant apps cannot run
+   radio option under *Supported account types*), then select **"Allow all
+   tenants"** when it expands. Single-tenant or allowlisted-only apps cannot run
    the device-code flow against the `common` authority (AADSTS50059), which is
    what the tool uses. Registration requires no redirect URI.
 4. Under **Certificates & secrets**, create a client secret and copy the value.

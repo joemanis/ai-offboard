@@ -26,9 +26,10 @@
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
           </button>.
           Under <b>Supported account types</b> choose
-          <b>"Multiple Entra ID tenants"</b> — the second radio option. (This is what the device-code
-          flow requires; the read-only scopes are still approved by your admin at first sign-in.)
-          Leave redirect URI empty. Click <b>Register</b>.</li>
+          <b>"Multiple Entra ID tenants"</b> — the second radio option. When it expands, select
+          <b>"Allow all tenants"</b> (not "Allow only certain tenants"). This is what the
+          device-code flow requires; your admin still approves the read-only scopes at first
+          sign-in. Leave redirect URI empty. Click <b>Register</b>.</li>
       <li>In the left menu, open <b>Authentication (Preview)</b>. Scroll to
           <b>Settings → Allow public client flows</b> and set it to <b>Enabled</b> (it may default
           off — flip it if so). Then click <b>Save</b> at the top. (This is what enables the
