@@ -87,7 +87,41 @@
   </div>
 
   <div class="card">
-    <h2>Full report (markdown)</h2>
+      <h2>Zero Trust policy compliance</h2>
+      <p class="sub">Policies evaluated against this scan. See <code>offboard policy check</code> for the CLI view.</p>
+      {% if policy_evals %}
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:12px">
+          <span style="font-size:0.85rem; font-weight:600; padding:4px 12px; border-radius:99px; background:{{ '#123524' if policy_summary.overall == 'PASS' else '#3a2418' }}; color:{{ '#4ade80' if policy_summary.overall == 'PASS' else '#fb923c' }}">
+            {{ policy_summary.overall }} — {{ policy_summary.compliant }}/{{ policy_summary.total }} passing
+          </span>
+          {% if policy_summary.by_severity.critical %}<span class="note">critical violations: {{ policy_summary.by_severity.critical }}</span>{% endif %}
+        </div>
+        <div style="display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); gap:10px">
+          {% for e in policy_evals %}
+          <div style="border:1px solid var(--border); border-radius:10px; padding:12px 14px; background:var(--bg)">
+            <div style="display:flex; justify-content:space-between; align-items:center; gap:8px">
+              <b style="font-size:0.9rem">{{ e.id }} — {{ e.name }}</b>
+              <span style="font-size:0.72rem; font-weight:700; padding:2px 8px; border-radius:99px; background:{{ '#123524' if e.compliant else '#3d1a1a' }}; color:{{ '#4ade80' if e.compliant else '#f87171' }}">
+                {{ 'PASS' if e.compliant else 'FAIL' }}
+              </span>
+            </div>
+            {% if not e.compliant and e.evidence %}
+            <ul style="margin:8px 0 0; padding-left:16px; font-size:0.78rem; color:var(--text-dim); line-height:1.5">
+              {% for line in e.evidence[:2] %}
+              <li>{{ line }}</li>
+              {% endfor %}
+            </ul>
+            {% endif %}
+          </div>
+          {% endfor %}
+        </div>
+      {% else %}
+        <p class="empty">No policies evaluated. Run a scan first.</p>
+      {% endif %}
+    </div>
+
+    <div class="card">
+      <h2>Full report (markdown)</h2>
     <div class="tablewrap">
       <pre style="min-width:640px">{{ report_md }}</pre>
     </div>

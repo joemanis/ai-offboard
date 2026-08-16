@@ -68,11 +68,39 @@
         </div>
         <p class="sub">A demo scan is pre-loaded. Start here to see what ai-offboard produces.</p>
         <div class="stats" style="margin:16px 0 20px">
-          <div class="stat accent"><b>{{ demo_principals }}</b><span>principals</span></div>
-          <div class="stat green"><b>{{ demo_apps }}</b><span>app assignments</span></div>
-          <div class="stat amber"><b>{{ demo_findings }}</b><span>findings</span></div>
-        </div>
-        <div class="actions">
+                  <div class="stat accent"><b>{{ demo_principals }}</b><span>principals</span></div>
+                  <div class="stat green"><b>{{ demo_apps }}</b><span>app assignments</span></div>
+                  <div class="stat amber"><b>{{ demo_findings }}</b><span>findings</span></div>
+                </div>
+
+                {% if policy_evals %}
+                <div style="margin:0 0 20px">
+                  <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:10px">
+                    <h3 style="margin:0">Zero Trust policy compliance</h3>
+                    <span style="font-size:0.78rem;font-weight:600;padding:3px 10px;border-radius:99px;background:{{ '#123524' if policy_summary.overall == 'PASS' else '#3a2418' }};color:{{ '#4ade80' if policy_summary.overall == 'PASS' else '#fb923c' }}">
+                      {{ policy_summary.overall }} · {{ policy_summary.compliant }}/{{ policy_summary.total }} passing
+                    </span>
+                  </div>
+                  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:8px">
+                    {% for e in policy_evals %}
+                    <div style="border:1px solid var(--border);border-radius:8px;padding:10px 12px;background:var(--bg)">
+                      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+                        <b style="font-size:0.9rem">{{ e.id }}</b>
+                        <span style="font-size:0.72rem;font-weight:700;padding:2px 8px;border-radius:99px;background:{{ '#123524' if e.compliant else '#3d1a1a' }};color:{{ '#4ade80' if e.compliant else '#f87171' }}">
+                          {{ 'PASS' if e.compliant else 'FAIL' }}
+                        </span>
+                      </div>
+                      <div style="font-size:0.82rem;color:var(--text-dim);margin-top:2px">{{ e.name }}</div>
+                      {% if not e.compliant and e.evidence %}
+                      <div style="font-size:0.75rem;color:var(--text-dim);margin-top:6px;line-height:1.4">{{ e.evidence[0] }}</div>
+                      {% endif %}
+                    </div>
+                    {% endfor %}
+                  </div>
+                </div>
+                {% endif %}
+
+                <div class="actions">
           <a class="btn" href="/report.md" download>Download report.md</a>
           <a class="btn ghost" href="/report.html" download>Download report.html</a>
           <a class="btn ghost" href="/" onclick="event.preventDefault();document.querySelector('form:has(input[value=\"1\"][name=\"mock\"]) button').click()">Re-run demo</a>
