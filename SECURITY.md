@@ -7,13 +7,16 @@ Only the latest release is supported.
 Open a private GitHub security advisory, or email the maintainers (see
 package metadata). Do **not** file a public issue for a real vulnerability.
 
-## Design trust posture (v1)
-`ai-offboard` is **read-only** by design in v1:
+## Design trust posture
+`ai-offboard` is **read-only by default**:
 
-- The v1 code path performs **zero** mutating Microsoft Graph calls.
-  Only `GET` requests against the Graph API are issued.
+- The scan path performs **zero** mutating Microsoft Graph / Workspace calls.
+  Only `GET` requests are issued.
 - The `plan` command produces a dry-run revocation plan and **never** applies
-  it. `execute` does not exist yet.
+  it.
+- The only write path is `offboard execute`, which is **opt-in**: it prints
+  the full plan, requires typed confirmation (unless `--yes` for automation),
+  and appends every mutation — success or failure — to a local audit log.
 - Scans are run with the **least privilege** the connector documents. Review
   `docs/connectors.md` before granting permissions to a scan principal.
 - Credentials are read from environment variables or a local config file that
