@@ -25,10 +25,16 @@ artifact an insurer, SOC2, or renewal actually accepts.
 
 ## Quick start
 
+### Install
+
+```bash
+pip install "ai-offboard[web]"     # from PyPI
+# or from source: pip install -e ".[web]"
+```
+
 ### Try the demo now (no Azure required)
 
 ```bash
-pip install -e ".[web]"
 offboard web                 # local web UI, then click "Run demo scan"
 offboard audit --tenant demo --mock  # or a terminal report
 ```
