@@ -18,9 +18,16 @@
     </p>
 
     <h2 style="margin-top:22px">Step 2: Enter this code</h2>
-    <div style="font-size:42px;letter-spacing:12px;font-weight:800;background:#0d1426;border:1px solid var(--border);border-radius:12px;padding:24px;margin:10px auto;max-width:360px;font-family:monospace"
-         id="userCode">{{ user_code }}</div>
-    <p class="note" style="margin:10px 0 4px">The code expires in 15 minutes.</p>
+        <div style="font-size:42px;letter-spacing:12px;font-weight:800;background:#0d1426;border:1px solid var(--border);border-radius:12px;padding:24px;margin:10px auto;max-width:360px;font-family:monospace"
+             id="userCode">{{ user_code }}</div>
+        <p style="margin:10px 0 4px;text-align:center">
+          <button type="button" onclick="copyCode()" title="Copy the code"
+                  style="background:none;border:1px solid var(--border);border-radius:6px;padding:4px 12px;cursor:pointer;color:var(--text-dim);font-size:13px">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+            <span id="copyCodeLabel">Copy code</span>
+          </button>
+        </p>
+        <p class="note" style="margin:6px 0 4px">The code expires in 15 minutes.</p>
 
     <div style="margin-top:28px">
       <div class="pill" id="statusPill">
@@ -40,6 +47,32 @@
 
 {% block scripts %}
 <script>
+function copyCode() {
+  var el = document.getElementById("userCode");
+  var label = document.getElementById("copyCodeLabel");
+  if (!el || !label) return;
+  var text = el.textContent.trim().replace(/\s+/g, "");
+  function done() {
+    label.textContent = "✓ Copied";
+    setTimeout(function() { label.textContent = "Copy code"; }, 1500);
+  }
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(done, function() { fallbackCopy(text, done); });
+  } else {
+    fallbackCopy(text, done);
+  }
+}
+function fallbackCopy(text, done) {
+  var ta = document.createElement("textarea");
+  ta.value = text;
+  ta.style.position = "fixed";
+  ta.style.opacity = "0";
+  document.body.appendChild(ta);
+  ta.select();
+  try { document.execCommand("copy"); } catch (e) {}
+  document.body.removeChild(ta);
+  done();
+}
 (function() {
   var polling = true;
   var flowId = "{{ flow_id }}";
