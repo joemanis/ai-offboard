@@ -149,15 +149,26 @@ async def auth_start(request: Request, provision: str = "0"):
     for the one-time Azure app registration first.
     """
     cfg = load_config()
-    if not cfg.public_client_id and provision not in ("1", "true", "on", "0"):
-        pass  # explicit provision flag still honored by callers
     if not cfg.public_client_id:
         # No registered app yet: guide registration (Microsoft blocks first-party
         # bootstrap clients with AADSTS65002, so a tenant-owned app is required).
         return HTMLResponse('<meta http-equiv="refresh" content="0;url=/auth/register"><p>Redirecting to app registration…</p>')
 
-    dc = DeviceCodeAuth(client_id=cfg.public_client_id)
-    flow_info = dc.begin_web_flow()
+    try:
+        dc = DeviceCodeAuth(client_id=cfg.public_client_id)
+        flow_info = dc.begin_web_flow()
+    except Exception as exc:  # noqa: BLE001 - surface the real Microsoft error (e.g. AADSTS50059)
+        return templates.TemplateResponse(
+            request,
+            "auth_register.html",
+            {
+                "request": request,
+                "error": f"Sign-in couldn't start: {exc}",
+                "env_path": True,
+                "version": __version__,
+                "repo": _REPO,
+            },
+        )
 
     import threading as _th
 

@@ -180,17 +180,32 @@ class DeviceCodeAuth:
         )
 
     def begin_web_flow(self, scopes: list[str] | None = None) -> dict:
-            """Start a device flow for the web UI; returns {user_code, uri, token}.
+        """Start a device flow for the web UI; returns {user_code, uri}.
 
-            The server can poll `finish_web_flow()` in a thread while the user
-            completes the browser step.
-            """
-            if self._flow is None:
-                self._flow = self._app.initiate_device_flow(scopes=scopes or DEVICE_CODE_SCOPES)
-            return {
-                "user_code": self._flow.get("user_code", ""),
-                "verification_uri": self._flow.get("verification_uri", ""),
-            }
+        The server can poll `finish_web_flow()` in a thread while the user
+        completes the browser step. Raises RuntimeError if Microsoft rejects
+        the initiation (e.g. AADSTS50059 for a single-tenant app against the
+        `common` authority) so callers surface the real error, not a KeyError
+        from a malformed flow dict.
+        """
+        if self._flow is None:
+            self._flow = self._app.initiate_device_flow(scopes=scopes or DEVICE_CODE_SCOPES)
+        if "user_code" not in self._flow:
+            err = self._flow.get("error_description") or self._flow.get("error") or "unknown initiation error"
+            hint = ""
+            if "AADSTS50059" in err:
+                hint = (
+                    " (This usually means the app was registered as 'Single tenant only'. "
+                    "Re-register with 'Multiple Entra ID tenants'.)"
+                )
+            elif "AADSTS65002" in err:
+                hint = " (This client ID is a Microsoft first-party app; register your own app instead.)"
+            raise RuntimeError(f"Device flow initiation failed: {err}{hint}")
+        return {
+            "user_code": self._flow.get("user_code", ""),
+            "verification_uri": self._flow.get("verification_uri", ""),
+        }
+
 
     def finish_web_flow(self, timeout: int = 300) -> AuthResult:
         """Block until the user completes the flow (call from a worker thread).

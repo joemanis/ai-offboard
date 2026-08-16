@@ -21,7 +21,8 @@
       <li>Open <a href="https://portal.azure.com" target="_blank" rel="noopener">portal.azure.com</a>
           → <b>Microsoft Entra ID</b> → <b>App registrations</b> → <b>New registration</b>.</li>
       <li><b>Name:</b> <code>ai-offboard</code>. Under <b>Supported account types</b> choose
-          <b>"Single tenant only — your tenant"</b> (the first radio option under that heading).
+          <b>"Multiple Entra ID tenants"</b> — the second radio option. (This is what the device-code
+          flow requires; the read-only scopes are still approved by your admin at first sign-in.)
           Leave redirect URI empty. Click <b>Register</b>.</li>
       <li>In the left menu, open <b>Authentication (Preview)</b>. Scroll to
           <b>Settings → Allow public client flows</b> and set it to <b>Enabled</b> (it may default

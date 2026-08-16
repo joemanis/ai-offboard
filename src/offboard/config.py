@@ -76,6 +76,6 @@ def write_env_file(path: str, config: Config) -> None:
 
 def default_env_path() -> str:
     """Where the setup wizard writes config by default (repo root .env)."""
-    # Resolve from the package's repo root upward so it works from any cwd.
+    # __file__ = <repo>/src/offboard/config.py; two parents = repo root.
     here = os.path.dirname(os.path.abspath(__file__))
-    return os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(here))), ".env")
+    return os.path.join(os.path.dirname(os.path.dirname(here)), ".env")
