@@ -144,11 +144,12 @@ class DeviceCodeAuth:
         tid = getattr(accounts[0], "tenant_id", None)
         return tid or _tenant_from_token(accounts[0].get("id_token_claims", {}).get("tid", ""))
 
-    def authenticate(self) -> AuthResult:
+    def authenticate(self, scopes: list[str] | None = None) -> AuthResult:
+        scopes = scopes or DEVICE_CODE_SCOPES
         # 1) Try silent auth from the cached refresh token
         accounts = self._app.get_accounts()
         if accounts:
-            result = self._app.acquire_token_silent(DEVICE_CODE_SCOPES, account=accounts[0])
+            result = self._app.acquire_token_silent(scopes, account=accounts[0])
             if result and "access_token" in result:
                 _save_token_cache(self._cache)
                 return AuthResult(
@@ -159,7 +160,6 @@ class DeviceCodeAuth:
                     account=accounts[0].get("username"),
                     mode=self.mode,
                 )
-        # 2) Fresh device-code flow
         self._flow = self._app.initiate_device_flow(scopes=DEVICE_CODE_SCOPES)
         if "user_code" not in self._flow:
             raise RuntimeError(f"Device flow failed: {self._flow.get('error_description')}")
@@ -179,18 +179,18 @@ class DeviceCodeAuth:
             mode=self.mode,
         )
 
-    def begin_web_flow(self) -> dict:
-        """Start a device flow for the web UI; returns {user_code, uri, token}.
+    def begin_web_flow(self, scopes: list[str] | None = None) -> dict:
+            """Start a device flow for the web UI; returns {user_code, uri, token}.
 
-        The server can poll `finish_web_flow()` in a thread while the user
-        completes the browser step.
-        """
-        if self._flow is None:
-            self._flow = self._app.initiate_device_flow(scopes=DEVICE_CODE_SCOPES)
-        return {
-            "user_code": self._flow.get("user_code", ""),
-            "verification_uri": self._flow.get("verification_uri", ""),
-        }
+            The server can poll `finish_web_flow()` in a thread while the user
+            completes the browser step.
+            """
+            if self._flow is None:
+                self._flow = self._app.initiate_device_flow(scopes=scopes or DEVICE_CODE_SCOPES)
+            return {
+                "user_code": self._flow.get("user_code", ""),
+                "verification_uri": self._flow.get("verification_uri", ""),
+            }
 
     def finish_web_flow(self, timeout: int = 300) -> AuthResult:
         """Block until the user completes the flow (call from a worker thread)."""

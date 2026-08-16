@@ -127,29 +127,60 @@ async def index(request: Request):
 
 
 @app.get("/auth/start")
-async def auth_start(request: Request):
-    """Initiate the device-code login flow. Returns a page with the code displayed."""
-    cfg = load_config()
-    client_id = cfg.public_client_id or "1950a258-227b-4e31-a9cf-717495945fc2"
-    dc = DeviceCodeAuth(client_id=client_id)
-    flow_info = dc.begin_web_flow()
+async def auth_start(request: Request, provision: str = "0"):
+    """Initiate the device-code login flow.
 
-    # Store the flow + a threading.Event for polling
+    - provision=1: bootstrap via a well-known public client, then create a
+      dedicated ai-offboard app registration, save it, and continue with that
+      app (two-step "Connect Microsoft 365").
+    - provision=0 (default): sign in with the already-provisioned app.
+    """
+
+    from .provision import BOOTSTRAP_CLIENT_ID, BOOTSTRAP_SCOPES
+
+    cfg = load_config()
+    if provision not in ("1", "true", "on") and not cfg.public_client_id:
+        # Nothing configured yet: behave like the full one-click setup.
+        provision = "1"
+
+    if provision in ("1", "true", "on"):
+        # Phase 1: bootstrap sign-in (must be re-done every time; the bootstrap
+        # client has no durable cache we should trust for scans).
+        client_id = cfg.public_client_id or BOOTSTRAP_CLIENT_ID
+        scopes = BOOTSTRAP_SCOPES
+        phase = "provision"
+    else:
+        client_id = cfg.public_client_id
+        scopes = None
+        phase = "connect"
+
+    dc = DeviceCodeAuth(client_id=client_id)
+    flow_info = dc.begin_web_flow(scopes=scopes)
 
     import threading as _th
 
     event = _th.Event()
     flow_id = f"flow_{id(dc)}_{_th.active_count()}"
     with _flow_lock:
-        _flows[flow_id] = {"dc": dc, "event": event, "user_code": flow_info["user_code"]}
+        _flows[flow_id] = {"dc": dc, "event": event, "user_code": flow_info["user_code"], "phase": phase}
 
     # Background thread: wait for the user to complete at microsoft.com/devicelogin
     def _wait() -> None:
         try:
             result = dc.finish_web_flow()
-            save_auth_state(result.tenant_id, "device_code")
-            with _flow_lock:
-                _flows[flow_id]["result"] = result
+            if phase == "provision":  # bootstrap done -> provision dedicated app
+                from .provision import provision_public_client, save_public_client_id
+
+                app_id = provision_public_client(result.token)
+                save_public_client_id(app_id)
+                with _flow_lock:
+                    _flows[flow_id]["phase"] = "provisioned"
+                    _flows[flow_id]["app_id"] = app_id
+            else:
+                save_auth_state(result.tenant_id, "device_code")
+                with _flow_lock:
+                    _flows[flow_id]["result"] = result
+                    _flows[flow_id]["phase"] = "connected"
         except Exception as exc:  # noqa: BLE001
             with _flow_lock:
                 _flows[flow_id]["error"] = str(exc)
@@ -167,6 +198,7 @@ async def auth_start(request: Request):
             "user_code": flow_info["user_code"],
             "verification_uri": flow_info["verification_uri"],
             "flow_id": flow_id,
+            "phase": phase,
             "version": __version__,
             "repo": _REPO,
         },
@@ -176,6 +208,9 @@ async def auth_start(request: Request):
 @app.get("/auth/poll")
 async def auth_poll(flow_id: str = ""):
     """Check whether the device-code flow completed. Returns JSON."""
+    import os as _os
+
+
     with _flow_lock:
         flow = _flows.get(flow_id)
         if flow is None:
@@ -185,6 +220,34 @@ async def auth_poll(flow_id: str = ""):
             error = flow.get("error")
             if error:
                 return {"status": "error", "error": error}
+            phase = flow.get("phase")
+            if phase == "provisioned":
+                # Dedicated app created; start the real sign-in with it.
+                app_id = flow["app_id"]
+                dc2 = DeviceCodeAuth(client_id=app_id)
+                flow_info = dc2.begin_web_flow()  # default DEVICE_CODE_SCOPES
+                flow2_id = f"flow_{id(dc2)}_{_os.getpid()}"
+                def _wait2() -> None:
+                    try:
+                        result = dc2.finish_web_flow()
+                        save_auth_state(result.tenant_id, "device_code")
+                        with _flow_lock:
+                            _flows[flow2_id]["result"] = result
+                            _flows[flow2_id]["phase"] = "connected"
+                    except Exception as exc:  # noqa: BLE001
+                        with _flow_lock:
+                            _flows[flow2_id]["error"] = str(exc)
+                    finally:
+                        _flows[flow2_id]["event"].set()
+                with _flow_lock:
+                    _flows[flow2_id] = {"dc": dc2, "event": threading.Event(), "user_code": flow_info["user_code"], "phase": "connect"}
+                threading.Thread(target=_wait2, daemon=True).start()
+                return {
+                    "status": "reprovisioned",
+                    "user_code": flow_info["user_code"],
+                    "verification_uri": flow_info["verification_uri"],
+                    "flow_id": flow2_id,
+                }
             return {"status": "connected", "tenant_id": flow.get("result", {}).get("tenant_id", "")}
         return {"status": "pending", "user_code": flow["user_code"]}
 

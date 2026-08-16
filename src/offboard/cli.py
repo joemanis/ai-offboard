@@ -105,6 +105,65 @@ def auth_login() -> None:
     typer.echo("Next: run `offboard audit` or `offboard web` to scan.")
 
 
+@_auth_app.command("provision")
+def auth_provision() -> None:
+    """One-click setup: register a dedicated 'ai-offboard' app in your tenant.
+
+    Two device-code sign-ins:
+      1. A bootstrap sign-in consents to app provisioning (Microsoft's own
+         consent screen, Application.ReadWrite.All via a well-known client).
+      2. ai-offboard creates a dedicated public-client app with only the
+         read scopes the scanner needs, writes its ID to .env as
+         OFFBOARD_PUBLIC_CLIENT_ID, then you sign in again with that app.
+
+    After this, `offboard auth login` / `offboard web` use the dedicated app.
+    """
+    from .auth import DeviceCodeAuth, save_auth_state
+    from .provision import (
+        BOOTSTRAP_CLIENT_ID,
+        BOOTSTRAP_SCOPES,
+        provision_public_client,
+        save_public_client_id,
+    )
+
+    _load_env()
+    cfg = load_config()
+
+    if cfg.public_client_id:
+        typer.secho(f"Already provisioned: OFFBOARD_PUBLIC_CLIENT_ID={cfg.public_client_id}", fg=typer.colors.YELLOW)
+        typer.echo("Run `offboard auth login` to sign in with it.")
+        return
+
+    typer.secho("Step 1 of 2 - bootstrap sign-in (consents to app provisioning)", fg=typer.colors.CYAN, bold=True)
+    bootstrap = DeviceCodeAuth(client_id=BOOTSTRAP_CLIENT_ID)
+    bootstrap_result = bootstrap.authenticate(scopes=BOOTSTRAP_SCOPES)
+    typer.secho("  Bootstrap authenticated.", fg=typer.colors.GREEN)
+
+    typer.secho("Creating dedicated 'ai-offboard' app registration...", fg=typer.colors.CYAN)
+    try:
+        app_id = provision_public_client(bootstrap_result.token)
+    except Exception as exc:
+        typer.secho(f"Provisioning failed: {exc}", fg=typer.colors.RED)
+        typer.secho(
+            "You can still connect manually: register a public client app with "
+            "device-code flows enabled, then set OFFBOARD_PUBLIC_CLIENT_ID in your .env.",
+            fg=typer.colors.YELLOW,
+        )
+        raise typer.Exit(1) from exc
+
+    env_path = save_public_client_id(app_id)
+    typer.secho(f"  Dedicated app registered (client ID {app_id[:8]}...)", fg=typer.colors.GREEN)
+    typer.echo(f"  Saved OFFBOARD_PUBLIC_CLIENT_ID to {env_path}")
+
+    typer.secho("Step 2 of 2 - authorize read access with the dedicated app", fg=typer.colors.CYAN, bold=True)
+    auth = DeviceCodeAuth(client_id=app_id)
+    result = auth.authenticate()
+    save_auth_state(result.tenant_id, "device_code")
+    typer.secho(f"Authenticated as {result.account or 'unknown'}", fg=typer.colors.GREEN)
+    typer.secho(f"Tenant: {result.tenant_id}", fg=typer.colors.GREEN)
+    typer.echo("Done. Run `offboard audit` or `offboard web` to scan.")
+
+
 @_auth_app.command("status")
 def auth_status() -> None:
     """Show current authentication state."""
