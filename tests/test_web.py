@@ -109,3 +109,32 @@ def test_poll_connected_handles_authresult_object():
     finally:
         with _flow_lock:
             _flows.pop(flow_id, None)
+
+
+def test_logout_clears_public_client_id(tmp_path, monkeypatch):
+    """Regression: Disconnect must remove OFFBOARD_PUBLIC_CLIENT_ID from both
+    the .env file and the process environment, so the next Connect shows the
+    fresh registration experience instead of reusing the old app ID."""
+    from offboard import config, provision
+
+    env_file = tmp_path / ".env"
+    monkeypatch.setattr(config, "default_env_path", lambda: str(env_file))
+
+    # Seed a .env with a client ID + an unrelated key (must survive) and put it
+    # in the process env as the running server would.
+    provision.save_public_client_id("fake-client-123")
+    with open(env_file, "a") as fh:
+        fh.write("OFFBOARD_CLIENT_ID=keepme\n")
+    monkeypatch.setenv("OFFBOARD_PUBLIC_CLIENT_ID", "fake-client-123")
+
+    client = TestClient(app)
+    resp = client.get("/auth/logout")
+    assert resp.status_code == 200
+
+    # .env no longer has the public client ID, but the other key survives
+    with open(env_file) as fh:
+        content = fh.read()
+    assert "OFFBOARD_PUBLIC_CLIENT_ID" not in content
+    assert "OFFBOARD_CLIENT_ID=keepme" in content
+    # Process env is cleared too
+    assert "OFFBOARD_PUBLIC_CLIENT_ID" not in __import__("os").environ

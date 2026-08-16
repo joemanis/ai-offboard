@@ -347,12 +347,29 @@ async def auth_register_save(request: Request, client_id: str = Form("")):
 
 @app.get("/auth/logout")
 async def auth_logout():
+    """Disconnect: clear tokens, cached auth state, AND the saved client ID.
+
+    After this the landing page shows the fresh 'Connect Microsoft 365'
+    experience again (it will prompt for a new app registration / client ID).
+    """
+    from .provision import remove_public_client_id
+
     cfg = load_config()
-    if not cfg.public_client_id:
-        return HTMLResponse('<meta http-equiv="refresh" content="2;url=/"><p>Nothing to sign out. Redirecting...</p>')
-    DeviceCodeAuth(client_id=cfg.public_client_id).logout()
+    client_id = cfg.public_client_id
+    # 1) Clear cached tokens + auth state (best effort; safe even if unset)
+    try:
+        DeviceCodeAuth(client_id=client_id or "00000000-0000-0000-0000-000000000000").logout()
+    except Exception as exc:  # noqa: BLE001
+        print(f"[auth] token clear warning: {exc}")
+    # 2) Remove OFFBOARD_PUBLIC_CLIENT_ID from .env (keeps other keys)
+    try:
+        remove_public_client_id()
+    except Exception as exc:  # noqa: BLE001
+        print(f"[auth] .env cleanup warning: {exc}")
+    # 3) Drop it from the running process so the next /auth/start sees fresh state
+    os.environ.pop("OFFBOARD_PUBLIC_CLIENT_ID", None)
     return HTMLResponse(
-        '<meta http-equiv="refresh" content="2;url=/"><p>Signed out. Redirecting...</p>'
+        '<meta http-equiv="refresh" content="2;url=/"><p>Disconnected. Redirecting…</p>'
     )
 
 

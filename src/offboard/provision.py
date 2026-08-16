@@ -137,6 +137,26 @@ def save_public_client_id(client_id: str, env_path: str | None = None) -> str:
     return path
 
 
+def remove_public_client_id(env_path: str | None = None) -> str:
+    """Remove OFFBOARD_PUBLIC_CLIENT_ID from the .env file.
+
+    Keeps all other keys (client credentials, tenant, etc.) intact.
+    Returns the env path touched (or '' if no .env existed).
+    """
+    from .config import default_env_path, parse_env_file
+
+    path = env_path or default_env_path()
+    if not os.path.exists(path):
+        return ""
+    existing = parse_env_file(path)
+    if "OFFBOARD_PUBLIC_CLIENT_ID" not in existing:
+        return path
+    existing.pop("OFFBOARD_PUBLIC_CLIENT_ID", None)
+    with open(path, "w", newline="\n") as fh:
+        fh.writelines(f"{key}={value}\n" for key, value in existing.items())
+    return path
+
+
 def app_exists(client_id: str) -> bool:
     """Quick local check: is this client ID recorded as our public client?"""
     from .config import load_config

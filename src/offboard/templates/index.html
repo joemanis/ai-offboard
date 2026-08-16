@@ -13,12 +13,19 @@
   {% endif %}
 
   {% if auth_connected %}
-      <div class="alert ok">
-        Connected to tenant <code>{{ auth_tenant }}</code>.
-        <a href="/auth/logout">Disconnect</a>
-      </div>
-    {% elif configured %}
-      <div class="alert ok">Client credentials configured for tenant <code>{{ tenant_id }}</code>.</div>
+        <div style="border:1px solid var(--green, #3fb950);border-radius:14px;padding:20px 24px;margin:4px 0 18px;text-align:center;background:linear-gradient(180deg, rgba(63,185,80,0.10), rgba(63,185,80,0.02));">
+          <div style="font-size:1.15rem;font-weight:700;margin-bottom:6px">✓ Connected</div>
+          <p style="margin:0 0 14px;color:var(--text-dim);font-size:0.9rem">
+            Connected to tenant <code>{{ auth_tenant }}</code>. Ready to run a live audit.
+          </p>
+          <button class="btn" onclick="location.href='/auth/logout'"
+                  style="font-size:0.95rem;padding:10px 22px;background:transparent;border:1px solid var(--red, #da3633);color:var(--red, #da3633)">
+            ← Disconnect from Microsoft
+          </button>
+          <p class="note" style="margin:10px 0 0">Disconnecting returns you to a clean setup — no app ID retained.</p>
+        </div>
+      {% elif configured %}
+        <div class="alert ok">Client credentials configured for tenant <code>{{ tenant_id }}</code>.</div>
     {% else %}
       <div class="connect-cta" style="border:1px solid var(--accent);border-radius:14px;padding:22px 24px;margin:4px 0 18px;text-align:center;background:linear-gradient(180deg, rgba(79,140,255,0.10), rgba(79,140,255,0.02));">
         <div style="font-size:1.15rem;font-weight:700;margin-bottom:6px">Get connected in ~2 minutes</div>
