@@ -31,6 +31,8 @@ DEVICE_CODE_SCOPES = [
     "https://graph.microsoft.com/Group.Read.All",
     "https://graph.microsoft.com/Application.Read.All",
     "https://graph.microsoft.com/Directory.Read.All",
+    # Required for the signInActivity field on /users (lastSignInDateTime).
+    "https://graph.microsoft.com/AuditLog.Read.All",
 ]
 
 STATE_DIR = os.path.join(os.path.expanduser("~"), ".ai-offboard")

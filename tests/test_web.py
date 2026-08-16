@@ -115,10 +115,19 @@ def test_logout_clears_public_client_id(tmp_path, monkeypatch):
     """Regression: Disconnect must remove OFFBOARD_PUBLIC_CLIENT_ID from both
     the .env file and the process environment, so the next Connect shows the
     fresh registration experience instead of reusing the old app ID."""
-    from offboard import config, provision
+    from offboard import auth, config, provision
 
     env_file = tmp_path / ".env"
     monkeypatch.setattr(config, "default_env_path", lambda: str(env_file))
+    # Redirect the auth token/state files into tmp_path: the /auth/logout
+    # route deletes them via the auth module's module-level path constants,
+    # so offline tests must never touch the real ~/.ai-offboard directory.
+    monkeypatch.setattr(auth, "STATE_DIR", str(tmp_path))
+    monkeypatch.setattr(auth, "TOKEN_CACHE_PATH", str(tmp_path / "token_cache.json"))
+    monkeypatch.setattr(auth, "AUTH_STATE_PATH", str(tmp_path / "auth.json"))
+    # The route builds DeviceCodeAuth, which resolves the same paths; keep
+    # them in sync through the auth module so both stay under tmp_path.
+    monkeypatch.setenv("OFFBOARD_STATE_DIR", str(tmp_path))
 
     # Seed a .env with a client ID + an unrelated key (must survive) and put it
     # in the process env as the running server would.

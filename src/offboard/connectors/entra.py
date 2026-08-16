@@ -31,8 +31,9 @@ class EntraConnector(Connector):
     """Scan a Microsoft 365 / Entra tenant."""
 
     def __init__(self, auth: AuthProvider) -> None:
-        self._auth_provider = auth
-        self._access_token: str | None = None
+            self._auth_provider = auth
+            self._access_token: str | None = None
+            self._signin_activity_unavailable: bool = False
 
     # ------------------------------------------------------------------
     # Auth plumbing
@@ -90,15 +91,17 @@ class EntraConnector(Connector):
     # ------------------------------------------------------------------
 
     def _fetch_users(self) -> list[dict]:
-        return self._list_all(
-            "/users",
-            {
-                "$select": (
-                    "id,displayName,userPrincipalName,accountEnabled,"
-                    "signInActivity,createdDateTime"
-                ),
-            },
-        )
+            """Fetch users. signInActivity (lastSignInDateTime) is an enrichment
+            that requires AuditLog.Read.All; if the tenant/app doesn't grant it,
+            degrade gracefully to the base query instead of failing the scan."""
+            base = "id,displayName,userPrincipalName,accountEnabled,createdDateTime"
+            try:
+                return self._list_all("/users", {"$select": f"{base},signInActivity"})
+            except requests.HTTPError as exc:
+                if exc.response is not None and exc.response.status_code == 403:
+                    self._signin_activity_unavailable = True
+                    return self._list_all("/users", {"$select": base})
+                raise
 
     def _fetch_service_principals(self) -> list[dict]:
         return self._list_all(
