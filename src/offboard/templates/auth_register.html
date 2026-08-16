@@ -85,6 +85,15 @@ function copyText(id, btn) {
 function pasteClientId(btn) {
   var input = document.getElementById("client_id");
   if (!input) return;
+  // Clipboard read APIs need a secure context (HTTPS). Over plain HTTP,
+  // fall back to focusing the field so Ctrl+V works — one click, then paste.
+  if (!window.isSecureContext || !navigator.clipboard || !navigator.clipboard.readText) {
+    input.focus();
+    input.select();
+    btn.innerHTML = "Ready — press Ctrl+V to paste";
+    setTimeout(function() { btn.innerHTML = "Paste from clipboard"; }, 2500);
+    return;
+  }
   var done = function(text) {
     input.value = (text || "").trim();
     input.focus();
@@ -92,11 +101,12 @@ function pasteClientId(btn) {
     btn.innerHTML = "✓ Pasted";
     setTimeout(function() { btn.innerHTML = original; }, 1500);
   };
-  if (navigator.clipboard && navigator.clipboard.readText) {
-    navigator.clipboard.readText().then(done, function() { btn.innerHTML = "Clipboard blocked — paste manually"; });
-  } else {
-    btn.innerHTML = "Clipboard blocked — paste manually (Ctrl+V)";
-  }
+  navigator.clipboard.readText().then(done, function() {
+    input.focus();
+    input.select();
+    btn.innerHTML = "Ready — press Ctrl+V to paste";
+    setTimeout(function() { btn.innerHTML = "Paste from clipboard"; }, 2500);
+  });
 }
 function fallbackCopy(text, done) {
   var ta = document.createElement("textarea");
