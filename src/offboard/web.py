@@ -42,15 +42,14 @@ _flow_lock = threading.Lock()
 def _pre_seed_demo() -> None:
     """Run a mock scan on import so the landing page shows sample results
     immediately on first load without requiring any clicks."""
-    from .connectors.mock import MockConnector
-
     conn = MockConnector()
     result = run_scan(conn, "demo")
     _state["result"] = result
     _state["mode"] = "demo"
+    _state["policy"] = _policy_view(result)
 
 
-_pre_seed_demo()
+# NOTE: _pre_seed_demo() is invoked AFTER _policy_view is defined (see below).
 
 
 def _connector_for(mock: bool):
@@ -71,6 +70,31 @@ def _catalog_matches(snapshot) -> list[dict]:
     return [{"name": name, "tier": tier} for name, tier in seen.items()]
 
 
+def _policy_view(result) -> tuple[dict, list[dict]]:
+    """Evaluate policies over a scan result for the web UI.
+
+    Returns (summary, evaluations-as-dicts). Safe on any result object.
+    """
+    from . import policy
+
+    snapshot = result.snapshot
+    evaluations = policy.evaluate(snapshot, result.findings)
+    summary = policy.summarize(evaluations)
+    evals = [
+        {
+            "id": e.policy.id,
+            "name": e.policy.name,
+            "severity": e.policy.severity,
+            "compliant": e.compliant,
+            "evidence": e.evidence,
+        }
+        for e in evaluations
+    ]
+    return summary, evals
+
+_pre_seed_demo()
+
+
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
     cfg = load_config()
@@ -79,6 +103,7 @@ async def index(request: Request):
     demo_findings = len(result.findings) if result else 0
     demo_principals = len(result.snapshot.principals) if result else 0
     demo_apps_count = len(result.snapshot.app_assignments) if result else 0
+    policy_tuple = _state.get("policy", ({}, []))
     return templates.TemplateResponse(
         request,
         "index.html",
@@ -92,6 +117,8 @@ async def index(request: Request):
             "demo_findings": demo_findings,
             "demo_principals": demo_principals,
             "demo_apps": demo_apps_count,
+            "policy_summary": policy_tuple[0],
+            "policy_evals": policy_tuple[1],
             "report_md": result.report_md if result else "",
             "version": __version__,
             "repo": _REPO,
@@ -171,6 +198,8 @@ async def scan(request: Request, tenant_id: str = Form(""), mock: str = Form("0"
         result = run_scan(connector, tid)
         _state["result"] = result
         _state["mode"] = "demo" if use_mock else "live"
+        _state["policy"] = _policy_view(result)
+        policy_summary, policy_evals = _state["policy"]
         auth_state = load_auth_state()
         return templates.TemplateResponse(
             request,
@@ -184,6 +213,8 @@ async def scan(request: Request, tenant_id: str = Form(""), mock: str = Form("0"
                 "tenant_id": result.snapshot.tenant_id,
                 "scanned_at": result.snapshot.scanned_at,
                 "report_md": result.report_md,
+                "policy_summary": policy_summary,
+                "policy_evals": policy_evals,
                 "mode": _state["mode"],
                 "version": __version__,
                 "repo": _REPO,

@@ -49,6 +49,27 @@ def test_report_md_download_empty_until_scan():
         assert resp.status_code == 404
 
 
+def test_landing_page_shows_policy_compliance_card():
+    client = TestClient(app)
+    resp = client.get("/")
+    assert resp.status_code == 200
+    # Pre-seeded demo evaluates the bundled policies
+    assert "Zero Trust policy compliance" in resp.text
+    assert "ZT-001" in resp.text
+    assert "PASS" in resp.text or "FAIL" in resp.text
+    assert "passing" in resp.text
+
+
+def test_report_page_shows_policy_section():
+    client = TestClient(app)
+    resp = client.post("/scan", data={"tenant_id": "demo", "mock": "1"})
+    assert resp.status_code == 200
+    text = resp.text
+    assert "Zero Trust policy compliance" in text
+    assert "ZT-005" in text  # the default-deny allowlist policy
+    assert "policy check" in text
+
+
 def test_live_scan_rejected_when_not_configured(monkeypatch):
     # Force incomplete config so a live scan path is exercised through the mock
     monkeypatch.setenv("OFFBOARD_CLIENT_ID", "")
