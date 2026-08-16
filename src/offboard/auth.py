@@ -193,13 +193,15 @@ class DeviceCodeAuth:
             }
 
     def finish_web_flow(self, timeout: int = 300) -> AuthResult:
-        """Block until the user completes the flow (call from a worker thread)."""
+        """Block until the user completes the flow (call from a worker thread).
+
+        MSAL's device flow already polls internally until the user finishes
+        (or the flow expires), so no exit-condition hook is needed — and the
+        `exit_condition_fn` kwarg isn't accepted by older msal versions.
+        """
         if self._flow is None:
             raise RuntimeError("No active device flow. Call begin_web_flow() first.")
-        # MSAL polls internally with the flow's expires_in; use an exit condition
-        result = self._app.acquire_token_by_device_flow(
-            self._flow, exit_condition_fn=lambda: False, claims_challenge=None
-        )
+        result = self._app.acquire_token_by_device_flow(self._flow)
         if "access_token" not in result:
             raise RuntimeError(f"Device flow failed: {result.get('error_description')}")
         _save_token_cache(self._cache)
