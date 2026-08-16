@@ -57,6 +57,28 @@ offboard audit --tenant <id> --report   # write report.md + report.html
 offboard plan --user <upn>              # dry-run revocation steps (executes nothing)
 ```
 
+## Zero Trust policy engine (v3)
+
+Turn the inventory into enforceable policy. Policies are declarative YAML
+using **named checks only** (no arbitrary expressions, so opening a policy
+file never executes code). The bundled baseline ships five policies:
+
+```bash
+offboard policy list            # see checks + bundled policies
+offboard policy check           # scan tenant, evaluate policy, exit 0 on PASS / 2 on FAIL
+offboard policy check --json    # machine-readable compliance report
+```
+
+Bundled policies:
+- **ZT-001** No stale or orphaned access
+- **ZT-002** MFA enforced on all principals
+- **ZT-003** No high-privilege AI app assignments
+- **ZT-004** No broad OAuth grants
+- **ZT-005** Approved AI-app allowlist (default-deny Zero Trust)
+
+Bring your own policies: drop a `.yml` file into `offboard/policies/default/`
+(or pass a path to the loader) with the same `policies:` structure.
+
 ## Power features
 
 ### Execute remediation (v2 — writes to the tenant)

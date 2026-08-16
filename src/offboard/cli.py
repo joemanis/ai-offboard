@@ -552,9 +552,78 @@ def report(
         ),
         out_dir,
     )
-    typer.secho(f"Re-rendered scan from {row['scanned_at']} ({row['tenant_id']})", fg=typer.colors.GREEN)
     typer.echo(f"  {md_path}")
     typer.echo(f"  {html_path}")
+
+
+# ---- policy sub-commands (v3 Zero Trust) ----
+
+_policy_app = typer.Typer()
+app.add_typer(_policy_app, name="policy", help="Zero Trust policy engine: evaluate the inventory against policy.")
+
+
+@_policy_app.command("list")
+def policy_list() -> None:
+    """List the available checks and the bundled default policies."""
+    from . import policy
+
+    typer.secho("Available policy checks:", fg=typer.colors.CYAN, bold=True)
+    for check in policy.list_checks():
+        typer.echo(f"  - {check}")
+    typer.secho("Bundled default policies:", fg=typer.colors.CYAN, bold=True)
+    for p in policy.load_policies():
+        default = " (default)" if p.default else ""
+        typer.echo(f"  [{p.id}] {p.name} - severity: {p.severity}{default}")
+
+
+@_policy_app.command("check")
+def policy_check(
+    tenant_id: Annotated[str | None, typer.Option("--tenant", help="Tenant ID (defaults to auth)")] = None,
+    mock: Annotated[bool, typer.Option("--mock", help="Use a demo snapshot (no Azure needed)")] = False,
+    json_output: Annotated[bool, typer.Option("--json", help="Emit results as JSON (stdout)")] = False,
+) -> None:
+    """Scan the tenant, evaluate the policy set, and report compliance."""
+    _load_env()
+    cfg = load_config()
+    try:
+        connector = _pick_connector(mock, cfg, prefer_device_code=True)
+    except RuntimeError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED)
+        raise typer.Exit(1) from exc
+
+    tid = tenant_id or _resolve_tenant_id(cfg) if not mock else "demo"
+    result = run_scan(connector, tid, save=True)
+
+    from . import policy
+
+    evaluations = policy.evaluate(result.snapshot, result.findings)
+    summary = policy.summarize(evaluations)
+
+    if json_output:
+        import json as _json
+
+        typer.echo(
+            _json.dumps(
+                {
+                    "tenant_id": tid,
+                    "scanned_at": result.snapshot.scanned_at,
+                    "summary": summary,
+                    "evaluations": [e.to_dict() for e in evaluations],
+                },
+                indent=2,
+            )
+        )
+        raise typer.Exit(0 if summary["overall"] == "PASS" else 2)
+
+    color = typer.colors.GREEN if summary["overall"] == "PASS" else typer.colors.RED
+    typer.secho(f"Policy compliance: {summary['overall']} ({summary['compliant']}/{summary['total']} passing)", fg=color, bold=True)
+    for e in evaluations:
+        mark = "[PASS]" if e.compliant else "[FAIL]"
+        c = typer.colors.GREEN if e.compliant else typer.colors.RED
+        typer.secho(f"  {mark} {e.policy.id} {e.policy.name} ({e.policy.severity})", fg=c)
+        for line in e.evidence:
+            typer.echo(f"        {line}")
+    raise typer.Exit(0 if summary["overall"] == "PASS" else 2)
 
 
 @app.command()

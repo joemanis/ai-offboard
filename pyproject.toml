@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ai-offboard"
-version = "0.1.0"
+version = "0.2.0"
 description = "Read-only AI tool audit + offboarding report for Microsoft 365 tenants."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -24,6 +24,7 @@ dependencies = [
     "requests>=2.31",
     "msal>=1.28",
     "jinja2>=3.1",
+    "pyyaml>=6.0",
 ]
 
 [project.optional-dependencies]
@@ -40,7 +41,7 @@ where = ["src"]
 # Critical: ship the runtime data files (catalog + web templates), or a wheel
 # install would have an empty app catalog and a broken web UI.
 [tool.setuptools.package-data]
-offboard = ["catalog/*.json", "templates/*.html", "static/*.css"]
+offboard = ["catalog/*.json", "templates/*.html", "static/*.css", "policies/**/*.yml"]
 
 [tool.ruff]
 line-length = 100
