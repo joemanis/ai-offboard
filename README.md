@@ -1,17 +1,24 @@
 # AI-Offboard
 
+[![CI](https://github.com/joemanis/ai-offboard/actions/workflows/ci.yml/badge.svg)](https://github.com/joemanis/ai-offboard/actions/workflows/ci.yml)
+[![PyPI version](https://img.shields.io/pypi/v/ai-offboard?color=blue)](https://pypi.org/project/ai-offboard/)
+[![Python](https://img.shields.io/pypi/pyversions/ai-offboard)](https://pypi.org/project/ai-offboard/)
+[![License](https://img.shields.io/github/license/joemanis/ai-offboard)](LICENSE)
+[![GitHub release](https://img.shields.io/github/v/release/joemanis/ai-offboard)](https://github.com/joemanis/ai-offboard/releases)
+
 **The AI tool audit + offboarding report you hand your insurance agent.**
 
 SMBs and MSPs have a loud, unfilled problem: no one can catalog the AI tools
 running in a tenant, see what data they touch, or prove on departure that
 access was revoked. Enterprise DLP vendors chase the big-org blocking market
 and skip the small-org audit-and-revoke-at-departure moment. `ai-offboard`
-closes that gap with a **read-only** scanner that produces the compliance
+closes that gap with a **read-only-first** scanner that produces the compliance
 artifact an insurer, SOC2, or renewal actually accepts.
 
-> **Read-only by design.** v1 makes zero writes: it never disables an account,
-> never revokes a token, never changes anything. It audits and reports. The
-> plan it produces is a dry-run checklist for a human to approve.
+> **Read-only by default.** The scanner never writes: it audits and reports,
+> and its plan is a dry-run checklist for a human to approve. Remediation
+> (`offboard execute`) is opt-in, behind an explicit approval gate, and logs
+> every mutation to an audit trail.
 
 ## What it does
 

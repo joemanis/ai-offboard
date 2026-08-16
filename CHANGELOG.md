@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.2.0 (2026-08-15)
+
+Zero Trust policy engine, gated remediation, MSP multi-tenant mode, Google Workspace. Full v1 → v3 roadmap delivered.
+
+### Added
+- **Zero Trust policy engine (v3):** declarative YAML policies evaluated against the scan inventory — `offboard policy list` / `policy check` (exit 0 = PASS, 2 = FAIL). Five bundled policies (ZT-001..ZT-005) including the default-deny approved-app allowlist. Named checks only — policy files can never execute code.
+- **`offboard execute` (v2):** applies remediation (block sign-in, revoke tokens, remove app assignment) behind an explicit approval gate; every mutation logged to a local audit table.
+- **Google Workspace connector:** reads users + OAuth-connected AI apps via Admin SDK Directory API (`offboard audit --workspace`); R5 scope normalization covers Google OAuth URLs. Full setup guide in `docs/connectors.md`.
+- **Scheduled recurring audits:** `offboard schedule add/remove/list/run-due` (daily/weekly/monthly) with SMTP report delivery.
+- **Multi-tenant MSP mode:** `offboard tenant add/remove/list` + `offboard audit --all` findings matrix.
+- **Trend comparison:** `offboard report --compare` diffs the last two saved scans.
+- **CSV export:** `offboard audit --csv`.
+- **AI-app catalog** expanded 5 → 41 real tools with DLP tiers; specificity-aware matcher (longest match wins).
+- **Web UI:** scan progress in CLI, pre-seeded sample report on first load, findings severity filter, Zero Trust policy compliance view.
+- **PyPI publication:** `pip install "ai-offboard[web]"`.
+
+### Changed
+- Connector layer refactored around a `Connector` interface + auth providers (device code / client credentials); `build_connector` auto-detects.
+- Device-code auth replaces App Registration as the recommended path — no tenant ID or client secret needed.
+
 ## 0.1.0 (2026-08-13)
 
 Initial release — read-only Microsoft 365 AI tool audit and offboarding report tool.
