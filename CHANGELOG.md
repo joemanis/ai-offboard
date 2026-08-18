@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.4.1 (2026-08-18)
+
+Live-scan reliability patch.
+
+### Fixed
+- Resolve catalog-matched AI app assignments and application permissions through
+  a bounded six-worker pool instead of serial 30-second Graph calls.
+- Preserve explicit `not assessed` coverage when any assignment lookup returns
+  HTTP 403.
+
 ## 0.4.0 (2026-08-18)
 
 Audit evidence portability for MSP and insurance/compliance workflows.

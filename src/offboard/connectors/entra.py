@@ -8,6 +8,7 @@ and resource attribution where Graph provides it.
 from __future__ import annotations
 
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import UTC, datetime
 from typing import Any
 
@@ -144,25 +145,38 @@ class EntraConnector(Connector):
         catalog = load_catalog()
         assignments: dict[str, list[dict[str, Any]]] = {}
         app_permissions: dict[str, list[dict[str, Any]]] = {}
-        complete = True
+        access_complete = True
         candidates = [
             sp for sp in service_principals if match_app(sp.get("appDisplayName", ""), catalog)
         ]
-        for index, sp in enumerate(candidates, start=1):
+        def resolve(sp: dict[str, Any]) -> tuple[str, list[dict[str, Any]], list[dict[str, Any]], bool]:
             sp_id = str(sp.get("id", ""))
-            if progress_callback:
-                progress_callback(f"Resolving AI app assignments {index}/{len(candidates)}…")
             try:
-                assignments[sp_id] = self._fetch_app_role_assignments(sp_id)
-                app_permissions[sp_id] = self._fetch_application_permissions(sp_id)
+                return (
+                    sp_id,
+                    self._fetch_app_role_assignments(sp_id),
+                    self._fetch_application_permissions(sp_id),
+                    True,
+                )
             except requests.HTTPError as exc:
                 if exc.response is not None and exc.response.status_code == 403:
-                    complete = False
-                    assignments.setdefault(sp_id, [])
-                    app_permissions.setdefault(sp_id, [])
-                else:
-                    raise
-        return assignments, app_permissions, complete
+                    return sp_id, [], [], False
+                raise
+
+        if not candidates:
+            return assignments, app_permissions, True
+        worker_count = min(6, len(candidates))
+        with ThreadPoolExecutor(max_workers=worker_count, thread_name_prefix="entra-access") as pool:
+            futures = [pool.submit(resolve, sp) for sp in candidates]
+            for index, future in enumerate(as_completed(futures), start=1):
+                sp_id, assignment_rows, permission_rows, resolved_complete = future.result()
+                assignments[sp_id] = assignment_rows
+                app_permissions[sp_id] = permission_rows
+                if not resolved_complete:
+                    access_complete = False
+                if progress_callback:
+                    progress_callback(f"Resolved AI app assignments {index}/{len(candidates)}…")
+        return assignments, app_permissions, access_complete
 
     # ------------------------------------------------------------------
     # Mapping to domain types
