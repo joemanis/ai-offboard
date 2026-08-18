@@ -156,7 +156,15 @@ offboard report --last            # re-render the last saved scan
 offboard audit --json             # findings as JSON to stdout
 offboard audit --csv              # findings to ai-offboard-findings.csv (MSP tooling friendly)
 offboard audit --report           # markdown + html report files
+offboard audit --bundle evidence/tenant-audit.zip
+                                  # complete evidence bundle: reports, snapshot,
+                                  # findings, coverage metadata, and checksums
 ```
+
+The evidence bundle contains tenant and principal identifiers. Treat it as
+confidential customer evidence. Its `manifest.json` records the scan counts,
+coverage status, package version, and SHA-256 hashes for the included artifacts.
+
 
 ### Google Workspace
 
