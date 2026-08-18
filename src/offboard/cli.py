@@ -22,7 +22,7 @@ from .config import default_env_path, load_config, parse_env_file
 from .connectors.entra import EntraConnector
 from .connectors.factory import build_connector
 from .connectors.mock import MockConnector
-from .scan import run_scan, write_report
+from .scan import run_scan, write_evidence_bundle, write_report
 from .setup import run_setup
 
 app = typer.Typer(no_args_is_help=True)
@@ -371,6 +371,7 @@ def audit(
     ] = None,
     report: Annotated[bool, typer.Option("--report", help="Write report.md + report.html")] = False,
     out_dir: Annotated[str, typer.Option("--out", help="Report output directory")] = ".",
+    bundle: Annotated[str | None, typer.Option("--bundle", help="Write a complete evidence ZIP to this path")] = None,
     mock: Annotated[bool, typer.Option("--mock", help="Use a demo snapshot (no Azure needed)")] = False,
     json_output: Annotated[bool, typer.Option("--json", help="Emit findings as JSON (stdout)")] = False,
     csv_output: Annotated[bool, typer.Option("--csv", help="Write findings to CSV (MSP tooling friendly)")] = False,
@@ -388,7 +389,7 @@ def audit(
         typer.secho("Scanning Google Workspace…", fg=typer.colors.CYAN)
         result = run_scan(ws_connector, tid, save=True)
         typer.secho("[done]", fg=typer.colors.GREEN)
-        _emit_audit_output(result, json_output, csv_output, report, out_dir)
+        _emit_audit_output(result, json_output, csv_output, report, out_dir, bundle)
         return
 
 
@@ -460,11 +461,22 @@ def audit(
     result = run_scan(connector, tid, progress_callback=None if json_output else _progress, save=True)
     if not json_output:
         typer.secho("[done]", fg=typer.colors.GREEN)
-    _emit_audit_output(result, json_output, csv_output, report, out_dir)
+    _emit_audit_output(result, json_output, csv_output, report, out_dir, bundle)
 
 
-def _emit_audit_output(result, json_output: bool, csv_output: bool, report: bool, out_dir: str) -> None:
+def _emit_audit_output(
+    result,
+    json_output: bool,
+    csv_output: bool,
+    report: bool,
+    out_dir: str,
+    bundle: str | None = None,
+) -> None:
     """Print or write the audit result in the requested format."""
+    if bundle:
+        bundle_path = write_evidence_bundle(result, bundle)
+        if not json_output:
+            typer.secho(f"Evidence bundle written: {bundle_path}", fg=typer.colors.GREEN)
     if json_output:
         import json as _json
 

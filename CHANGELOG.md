@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.4.0 (2026-08-18)
+
+Audit evidence portability for MSP and insurance/compliance workflows.
+
+### Added
+- `offboard audit --bundle <path>` creates a self-contained evidence ZIP.
+- Bundles include the Markdown and HTML reports, full machine-readable snapshot,
+  findings JSON/CSV, coverage metadata, a manifest, and SHA-256 checksums.
+- Bundle manifests record the package version, tenant, scan counts, and
+  confidentiality handling warning.
+- JSON stdout remains clean when bundle creation is combined with `--json`.
+
+### Changed
+- README now documents the evidence-bundle workflow and handling requirements.
+
 ## 0.3.0 (2026-08-17)
 
 Trustworthy Entra inventory and safer operator workflows.
