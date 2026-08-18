@@ -230,10 +230,14 @@ async def auth_poll(flow_id: str = ""):
 @app.post("/scan", response_class=HTMLResponse)
 async def scan(request: Request, tenant_id: str = Form(""), mock: str = Form("0")):
     use_mock = mock in ("1", "true", "on")
-    tid = tenant_id or "demo"
+    auth_state = load_auth_state()
+    cfg = load_config()
+    # A connected device-code session already knows the tenant. Do not label a
+    # live scan as `demo` just because the optional form field was blank.
+    tid = tenant_id or auth_state.get("tenant_id", "") or cfg.tenant_id or "demo"
     try:
         connector = _connector_for(use_mock)
-        result = run_scan(connector, tid)
+        result = run_scan(connector, tid, save=True)
         _state["result"] = result
         _state["mode"] = "demo" if use_mock else "live"
         _state["policy"] = _policy_view(result)

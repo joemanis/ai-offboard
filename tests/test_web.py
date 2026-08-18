@@ -147,3 +147,33 @@ def test_logout_clears_public_client_id(tmp_path, monkeypatch):
     assert "OFFBOARD_CLIENT_ID=keepme" in content
     # Process env is cleared too
     assert "OFFBOARD_PUBLIC_CLIENT_ID" not in __import__("os").environ
+
+
+def test_live_scan_uses_saved_tenant_and_persists(monkeypatch):
+    """A blank tenant field on a connected live scan uses auth state, not demo."""
+    from dataclasses import replace
+
+    from offboard import web
+    from offboard.connectors.mock import MockConnector
+    from offboard.scan import run_scan as real_run_scan
+
+    seen = {}
+
+    class TenantAwareMock:
+        def snapshot(self, tenant_id, progress_callback=None):
+            snapshot = MockConnector().snapshot("demo", progress_callback=progress_callback)
+            return replace(snapshot, tenant_id=tenant_id)
+
+    def fake_run_scan(connector, tenant_id, **kwargs):
+        seen["tenant_id"] = tenant_id
+        seen["save"] = kwargs.get("save")
+        return real_run_scan(connector, tenant_id, save=False)
+
+    monkeypatch.setattr(web, "load_auth_state", lambda: {"tenant_id": "tenant-live"})
+    monkeypatch.setattr(web, "_connector_for", lambda use_mock: TenantAwareMock())
+    monkeypatch.setattr(web, "run_scan", fake_run_scan)
+    response = TestClient(app).post("/scan", data={"tenant_id": "", "mock": "1"})
+
+    assert response.status_code == 200
+    assert seen == {"tenant_id": "tenant-live", "save": True}
+    assert "tenant-live" in response.text
