@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import threading
 from types import SimpleNamespace
 
 from offboard.connectors.entra import EntraConnector
@@ -133,3 +134,26 @@ def test_snapshot_attributes_delegated_and_application_grants(monkeypatch) -> No
     assert application.grant_type == "application"
     assert application.resource_display_name == "Microsoft Graph"
     assert application.scope == "Mail.Read"
+
+
+def test_ai_access_resolution_runs_catalog_apps_concurrently(monkeypatch) -> None:
+    connector = EntraConnector(SimpleNamespace(authenticate=lambda: SimpleNamespace(token="token")))
+    service_principals = [
+        {"id": f"sp-{index}", "appDisplayName": name, "appRoles": []}
+        for index, name in enumerate(("ChatGPT", "Claude", "Copilot"))
+    ]
+    barrier = threading.Barrier(3)
+
+    def fetch_assignments(service_principal_id: str) -> list[dict]:
+        barrier.wait(timeout=2)
+        return [{"principalId": service_principal_id}]
+
+    monkeypatch.setattr(connector, "_fetch_app_role_assignments", fetch_assignments)
+    monkeypatch.setattr(connector, "_fetch_application_permissions", lambda _: [])
+
+    assignments, permissions, complete = connector._fetch_ai_access(service_principals)
+
+    assert complete
+    assert set(assignments) == {"sp-0", "sp-1", "sp-2"}
+    assert all(len(rows) == 1 for rows in assignments.values())
+    assert permissions == {"sp-0": [], "sp-1": [], "sp-2": []}
