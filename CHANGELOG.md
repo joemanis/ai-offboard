@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.3.0 (unreleased)
+## 0.3.0 (2026-08-17)
 
 Trustworthy Entra inventory and safer operator workflows.
 
