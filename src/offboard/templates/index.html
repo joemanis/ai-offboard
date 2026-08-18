@@ -44,7 +44,7 @@
 
   <div class="card">
     <h2>Run a live audit</h2>
-    <p class="sub">Scans the tenant for AI app assignments, access grants, and risk findings.</p>
+    <p class="sub">Scans the tenant for enterprise apps, access grants, and risk findings.</p>
     <form method="post" action="/scan" onsubmit="setLoading(this)">
       <label for="tenant">Tenant ID (optional — auto-detected when signed in)</label>
       <input type="text" id="tenant" name="tenant_id"
@@ -84,7 +84,7 @@
         <p class="sub">A demo scan is pre-loaded. Start here to see what ai-offboard produces.</p>
         <div class="stats" style="margin:16px 0 20px">
                   <div class="stat accent"><b>{{ demo_principals }}</b><span>principals</span></div>
-                  <div class="stat green"><b>{{ demo_apps }}</b><span>app assignments</span></div>
+                  <div class="stat green"><b>{{ demo_apps }}</b><span>enterprise apps</span></div>
                   <div class="stat amber"><b>{{ demo_findings }}</b><span>findings</span></div>
                 </div>
 

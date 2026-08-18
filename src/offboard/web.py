@@ -57,7 +57,7 @@ def _pre_seed_demo() -> None:
     """Run a mock scan on import so the landing page shows sample results
     immediately on first load without requiring any clicks."""
     conn = MockConnector()
-    result = run_scan(conn, "demo")
+    result = run_scan(conn, "demo", save=False)
     _state["result"] = result
     _state["mode"] = "demo"
     _state["policy"] = _policy_view(result)

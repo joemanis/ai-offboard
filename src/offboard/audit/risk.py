@@ -99,8 +99,12 @@ def rule_stale_access(principal: Principal, no_signin_days: int = 90) -> Finding
 
 
 def rule_mfa_gap(principal: Principal) -> Finding | None:
-    """Rule 2: account enabled but MFA not enforced."""
-    if principal.enabled and principal.mfa_state in (None, "not_registered"):
+    """Rule 2: account enabled and explicitly reported as not MFA-registered.
+
+    ``None`` means the connector did not collect MFA state. Unknown is not the
+    same thing as a confirmed MFA gap, so missing telemetry is skipped here.
+    """
+    if principal.enabled and principal.mfa_state == "not_registered":
         return Finding(
             rule_id="R2",
             severity="high",

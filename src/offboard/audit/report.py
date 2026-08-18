@@ -19,7 +19,7 @@ def render_markdown(snapshot: TenantSnapshot, findings: list[Finding]) -> str:
         f"- **Tenant:** {snapshot.tenant_id}",
         f"- **Scanned at:** {snapshot.scanned_at}",
         f"- **Principals scanned:** {len(snapshot.principals)}",
-        f"- **App assignments:** {len(snapshot.app_assignments)}",
+        f"- **Enterprise apps:** {len(snapshot.app_assignments)}",
         "",
     ]
     if not findings:

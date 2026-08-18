@@ -151,7 +151,10 @@ class EntraConnector(Connector):
                     principal_id=sp["id"],
                     app_display_name=name,
                     app_role_id=None,
-                    is_high_privilege=sp.get("servicePrincipalType") == "Application",
+                    # A service principal being an application does not make it
+                    # high privilege. Privilege comes from catalog classification
+                    # or an explicit assignment signal, evaluated by R4.
+                    is_high_privilege=False,
                 )
             )
         return out

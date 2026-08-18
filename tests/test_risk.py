@@ -9,6 +9,7 @@ from offboard.audit.risk import (
 )
 from offboard.catalog.matcher import CatalogEntry, match_app
 from offboard.connectors.base import AppAssignment, Principal, TenantSnapshot
+from offboard.connectors.entra import EntraConnector
 from offboard.plan.planner import plan_for_finding
 
 
@@ -32,6 +33,10 @@ def test_mfa_gap_finding():
     assert f is not None and f.severity == "high"
 
 
+def test_mfa_gap_unknown_state_is_not_a_finding():
+    assert rule_mfa_gap(Principal(id="2", name="u@x.com", type="user", enabled=True, mfa_state=None)) is None
+
+
 def test_high_priv_app_finding():
     f = rule_high_privilege_app(AppAssignment(principal_id="1", app_display_name="Copilot", is_high_privilege=True), CatalogEntry("Copilot", "high", ""))
     assert f is not None
@@ -43,11 +48,23 @@ def test_plan_is_dry_run_no_risky_unescaped():
     assert steps and all(s.risky for s in steps)
 
 
+def test_unknown_app_is_not_high_privilege_by_default():
+    assignment = AppAssignment(principal_id="1", app_display_name="Microsoft Intune")
+    assert rule_high_privilege_app(assignment, None) is None
+
+
+def test_entra_application_service_principal_is_not_privileged_by_type():
+    assignment = EntraConnector._to_assignments(
+        [{"id": "sp1", "appDisplayName": "Microsoft Intune", "servicePrincipalType": "Application"}]
+    )[0]
+    assert assignment.is_high_privilege is False
+
+
 def test_run_rules_end_to_end():
     snap = TenantSnapshot(
         tenant_id="t",
         scanned_at="",
-        principals=[Principal(id="1", name="a", type="user", enabled=True, mfa_state=None)],
+        principals=[Principal(id="1", name="a", type="user", enabled=True, mfa_state="not_registered")],
         app_assignments=[AppAssignment(principal_id="1", app_display_name="Copilot", is_high_privilege=True)],
     )
     findings = run_rules(snap)
