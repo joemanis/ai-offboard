@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.3.0 (unreleased)
+
+Trustworthy Entra inventory and safer operator workflows.
+
+### Added
+- Real Graph `appRoleAssignedTo` discovery for catalog-matched AI applications, including assigned principal and role attribution.
+- Enterprise-app inventory counts are separated from actual app-role assignments.
+- Delegated OAuth grants and application permissions now include client/resource names, consent type, and grant type where Graph provides them.
+- MFA registration coverage states and explicit `NOT_ASSESSED` policy results when reports telemetry is unavailable.
+- Remote web mode with explicit host opt-in, operator token, SameSite session cookie, cross-origin state-change protection, and POST-only logout.
+- MSP guard preventing `audit --all` from reusing an interactive device-code session across tenants.
+- Graph payload contract tests and a cross-platform built-wheel smoke-test matrix.
+
+### Changed
+- R4 no longer treats every Entra service principal as a high-privilege assignment.
+- R5 findings use readable app/resource attribution and deduplicate identical grants.
+- Reports expose data-coverage and app-role-assignment counts instead of overstating inventory.
+
 ## 0.2.0 (2026-08-15)
 
 Zero Trust policy engine, gated remediation, MSP multi-tenant mode, Google Workspace. Full v1 → v3 roadmap delivered.

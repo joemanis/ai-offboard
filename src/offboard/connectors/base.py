@@ -25,22 +25,31 @@ class Principal:
 
 @dataclass
 class AppAssignment:
-    """A principal's assignment to an app with an app role."""
+    """A real principal-to-application role assignment."""
 
     principal_id: str
     app_display_name: str
     app_role_id: str | None = None
     is_high_privilege: bool = False
+    principal_display_name: str | None = None
+    principal_type: str | None = None
+    role_display_name: str | None = None
+    app_id: str | None = None
 
 
 @dataclass
 class PermissionGrant:
-    """A service principal's delegated/app permission grant."""
+    """A service principal's delegated or application permission grant."""
 
     app_id: str
     resource: str
     scope: str
-    grant_type: str  # "delegated" | "app"
+    grant_type: str  # "delegated" | "application"
+    app_display_name: str | None = None
+    resource_display_name: str | None = None
+    consent_type: str | None = None
+    principal_id: str | None = None
+    principal_display_name: str | None = None
 
 
 @dataclass
@@ -52,6 +61,8 @@ class TenantSnapshot:
     principals: list[Principal] = field(default_factory=list)
     app_assignments: list[AppAssignment] = field(default_factory=list)
     permission_grants: list[PermissionGrant] = field(default_factory=list)
+    enterprise_app_count: int | None = None
+    coverage: dict[str, str] = field(default_factory=dict)
 
 
 class Connector(ABC):

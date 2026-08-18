@@ -18,10 +18,12 @@
           <p style="margin:0 0 14px;color:var(--text-dim);font-size:0.9rem">
             Connected to tenant <code>{{ auth_tenant }}</code>. Ready to run a live audit.
           </p>
-          <button class="btn" onclick="location.href='/auth/logout'"
-                  style="font-size:0.95rem;padding:10px 22px;background:transparent;border:1px solid var(--red, #da3633);color:var(--red, #da3633)">
-            ← Disconnect from Microsoft
-          </button>
+          <form method="post" action="/auth/logout" style="display:inline">
+            <button class="btn" type="submit"
+                    style="font-size:0.95rem;padding:10px 22px;background:transparent;border:1px solid var(--red, #da3633);color:var(--red, #da3633)">
+              ← Disconnect from Microsoft
+            </button>
+          </form>
           <p class="note" style="margin:10px 0 0">Disconnecting returns you to a clean setup — no app ID retained.</p>
         </div>
       {% elif configured %}

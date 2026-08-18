@@ -55,7 +55,8 @@ def test_unknown_app_is_not_high_privilege_by_default():
 
 def test_entra_application_service_principal_is_not_privileged_by_type():
     assignment = EntraConnector._to_assignments(
-        [{"id": "sp1", "appDisplayName": "Microsoft Intune", "servicePrincipalType": "Application"}]
+        [{"id": "sp1", "appDisplayName": "Microsoft Intune", "servicePrincipalType": "Application"}],
+        {"sp1": [{"principalId": "user1", "principalDisplayName": "u@x.com", "principalType": "User", "appRoleId": "role1"}]},
     )[0]
     assert assignment.is_high_privilege is False
 

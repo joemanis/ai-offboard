@@ -19,9 +19,19 @@ def render_markdown(snapshot: TenantSnapshot, findings: list[Finding]) -> str:
         f"- **Tenant:** {snapshot.tenant_id}",
         f"- **Scanned at:** {snapshot.scanned_at}",
         f"- **Principals scanned:** {len(snapshot.principals)}",
-        f"- **Enterprise apps:** {len(snapshot.app_assignments)}",
+        f"- **Enterprise apps:** {snapshot.enterprise_app_count if snapshot.enterprise_app_count is not None else len(snapshot.app_assignments)}",
+        f"- **App-role assignments:** {len(snapshot.app_assignments)}",
         "",
     ]
+    if snapshot.coverage:
+        lines.extend(
+            [
+                "",
+                "## Data coverage",
+                "",
+                *[f"- **{name.replace('_', ' ').title()}:** {state}" for name, state in sorted(snapshot.coverage.items())],
+            ]
+        )
     if not findings:
         lines.append("No findings. Clean scan.")
         return "\n".join(lines) + "\n"

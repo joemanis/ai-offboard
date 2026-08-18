@@ -25,6 +25,7 @@ CREATE TABLE IF NOT EXISTS scans (
     principal_count INTEGER NOT NULL,
     app_count INTEGER NOT NULL,
     grant_count INTEGER NOT NULL,
+    enterprise_app_count INTEGER,
     finding_count INTEGER NOT NULL,
     findings_json TEXT NOT NULL,
     report_md TEXT NOT NULL,
@@ -177,6 +178,10 @@ def _connect() -> sqlite3.Connection:
     os.makedirs(_STATE_DIR, exist_ok=True)
     conn = sqlite3.connect(DB_PATH)
     conn.executescript(_SCHEMA)
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(scans)")}
+    if "enterprise_app_count" not in columns:
+        conn.execute("ALTER TABLE scans ADD COLUMN enterprise_app_count INTEGER")
+        conn.commit()
     return conn
 
 
@@ -199,8 +204,8 @@ def save_scan(result: ScanResult) -> int:
             """
             INSERT INTO scans
               (tenant_id, scanned_at, principal_count, app_count, grant_count,
-               finding_count, findings_json, report_md, report_html)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+               enterprise_app_count, finding_count, findings_json, report_md, report_html)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 result.snapshot.tenant_id,
@@ -208,6 +213,7 @@ def save_scan(result: ScanResult) -> int:
                 len(result.snapshot.principals),
                 len(result.snapshot.app_assignments),
                 len(result.snapshot.permission_grants),
+                result.snapshot.enterprise_app_count,
                 len(result.findings),
                 json.dumps(findings_payload),
                 result.report_md,

@@ -39,6 +39,14 @@ flows (default in the Microsoft Entra admin center for most tenants).
    - `User.Read.All`
    - `Group.Read.All`
    - `Application.Read.All`
+   - `AuditLog.Read.All` (optional sign-in activity enrichment)
+   - `Reports.Read.All` (MFA registration posture)
+
+   The scanner uses `appRoleAssignedTo` to resolve actual user/group/service-principal
+   assignments for catalog-matched AI applications. A service principal appearing
+   in the inventory is not itself treated as an assignment. If the optional audit
+   or reports permissions are not consented, the report marks that data as
+   **not assessed** instead of claiming a clean result.
 
    **Do not grant `Directory.ReadWrite.All` or any write scope.**
 6. Copy the **Application (client) ID** and **Tenant ID**.
@@ -104,3 +112,28 @@ All existing outputs work: `--report`, `--json`, `--csv`, and the web UI.
 The Workspace connector only reads `admin.directory.user.readonly` plus the
 **tokens** endpoint (which lists third-party OAuth grants). There is no write
 path — `offboard execute` remains Entra-only in this release.
+
+---
+
+## Web deployment posture
+
+The web UI binds to loopback by default:
+
+```bash
+offboard web                         # http://127.0.0.1:8600
+offboard web --host 100.93.84.62     # rejected unless a token is configured
+```
+
+Remote binding requires a shared operator token and should be placed behind
+HTTPS, Tailscale Serve, or an authenticated reverse proxy:
+
+```bash
+set OFFBOARD_WEB_TOKEN=<long-random-token>
+offboard web --host <tailnet-ip>
+```
+
+Remote mode protects the UI with a process-local operator session, uses
+HttpOnly/SameSite cookies, rejects cross-origin state changes, and exposes
+logout as POST-only. It is not a substitute for TLS. Do not expose Uvicorn
+directly to the public internet. Use one isolated server process per operator
+or tenant, and never share a cached device-code session across MSP tenants.

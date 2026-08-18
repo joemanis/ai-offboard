@@ -16,6 +16,7 @@
   <div class="stats">
     <div class="stat accent"><b>{{ principal_count }}</b><span>principals</span></div>
     <div class="stat green"><b>{{ app_count }}</b><span>enterprise apps</span></div>
+    <div class="stat green"><b>{{ assignment_count }}</b><span>app-role assignments</span></div>
     <div class="stat amber"><b>{{ findings|length }}</b><span>findings</span></div>
   </div>
 
@@ -38,6 +39,20 @@
       </div>
     {% else %}
       <p class="empty">No AI app assignments detected.</p>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <h2>Data coverage</h2>
+    <p class="sub">A green finding count is only as trustworthy as the telemetry behind it.</p>
+    {% if coverage %}
+      <div class="chips">
+        {% for name, state in coverage.items() %}
+          <span class="chip {{ 'high' if state == 'not_assessed' else '' }}">{{ name.replace('_', ' ') }}<small>{{ state }}</small></span>
+        {% endfor %}
+      </div>
+    {% else %}
+      <p class="empty">Coverage metadata was not recorded for this scan.</p>
     {% endif %}
   </div>
 
@@ -92,7 +107,7 @@
       {% if policy_evals %}
         <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:12px">
           <span style="font-size:0.85rem; font-weight:600; padding:4px 12px; border-radius:99px; background:{{ '#123524' if policy_summary.overall == 'PASS' else '#3a2418' }}; color:{{ '#4ade80' if policy_summary.overall == 'PASS' else '#fb923c' }}">
-            {{ policy_summary.overall }} — {{ policy_summary.compliant }}/{{ policy_summary.total }} passing
+            {{ policy_summary.overall }} — {{ policy_summary.compliant }}/{{ policy_summary.total }} passing{% if policy_summary.not_assessed %}, {{ policy_summary.not_assessed }} not assessed{% endif %}
           </span>
           {% if policy_summary.by_severity.critical %}<span class="note">critical violations: {{ policy_summary.by_severity.critical }}</span>{% endif %}
         </div>
@@ -102,7 +117,7 @@
             <div style="display:flex; justify-content:space-between; align-items:center; gap:8px">
               <b style="font-size:0.9rem">{{ e.id }} — {{ e.name }}</b>
               <span style="font-size:0.72rem; font-weight:700; padding:2px 8px; border-radius:99px; background:{{ '#123524' if e.compliant else '#3d1a1a' }}; color:{{ '#4ade80' if e.compliant else '#f87171' }}">
-                {{ 'PASS' if e.compliant else 'FAIL' }}
+                {{ 'PASS' if e.compliant else ('NOT ASSESSED' if e.status == 'not_assessed' else 'FAIL') }}
               </span>
             </div>
             {% if not e.compliant and e.evidence %}

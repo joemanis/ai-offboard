@@ -72,6 +72,7 @@ class PolicyEvaluation:
     compliant: bool
     evidence: list[str] = field(default_factory=list)
     subjects: list[str] = field(default_factory=list)
+    status: str = "assessed"  # assessed | not_assessed
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -79,6 +80,7 @@ class PolicyEvaluation:
             "name": self.policy.name,
             "severity": self.policy.severity,
             "compliant": self.compliant,
+            "status": self.status,
             "evidence": self.evidence,
             "subjects": self.subjects,
         }
@@ -97,9 +99,19 @@ def _check_stale_access(policy: Policy, snapshot: TenantSnapshot, findings: list
 
 def _check_mfa_enforced(policy: Policy, snapshot: TenantSnapshot, findings: list[Finding], params: dict[str, Any]) -> PolicyEvaluation:
     related = [f for f in findings if f.rule_id == "R2"]
+    coverage = snapshot.coverage.get("mfa")
+    if coverage is None:
+        coverage = "assessed" if all(p.mfa_state is not None for p in snapshot.principals) else "not_assessed"
+    if coverage != "assessed":
+        return PolicyEvaluation(
+            policy,
+            False,
+            ["MFA registration telemetry was not collected; this policy is not assessed."],
+            status="not_assessed",
+        )
     if related:
         return PolicyEvaluation(policy, False, [f.evidence for f in related], [f.subject for f in related])
-    return PolicyEvaluation(policy, True, ["All enabled principals have enforced MFA."])
+    return PolicyEvaluation(policy, True, ["All assessed enabled principals have MFA registration."])
 
 
 def _check_no_high_privilege_apps(policy: Policy, snapshot: TenantSnapshot, findings: list[Finding], params: dict[str, Any]) -> PolicyEvaluation:
@@ -192,13 +204,16 @@ def summarize(evaluations: list[PolicyEvaluation]) -> dict[str, Any]:
     """Compress evaluations into a compliance summary for reports/CLI."""
     total = len(evaluations)
     compliant = sum(1 for e in evaluations if e.compliant)
-    violations = [e for e in evaluations if not e.compliant]
+    violations = [e for e in evaluations if not e.compliant and e.status != "not_assessed"]
     severities = ["critical", "high", "medium", "low"]
     by_severity = {s: len([e for e in violations if e.policy.severity == s]) for s in severities}
+    not_assessed = sum(1 for e in evaluations if e.status == "not_assessed")
+    overall = "FAIL" if violations else ("NOT_ASSESSED" if not_assessed else "PASS")
     return {
         "total": total,
         "compliant": compliant,
         "violations": len(violations),
+        "not_assessed": not_assessed,
         "by_severity": by_severity,
-        "overall": "PASS" if not violations else "FAIL",
+        "overall": overall,
     }

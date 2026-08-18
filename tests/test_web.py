@@ -137,7 +137,7 @@ def test_logout_clears_public_client_id(tmp_path, monkeypatch):
     monkeypatch.setenv("OFFBOARD_PUBLIC_CLIENT_ID", "fake-client-123")
 
     client = TestClient(app)
-    resp = client.get("/auth/logout")
+    resp = client.post("/auth/logout")
     assert resp.status_code == 200
 
     # .env no longer has the public client ID, but the other key survives
@@ -172,8 +172,40 @@ def test_live_scan_uses_saved_tenant_and_persists(monkeypatch):
     monkeypatch.setattr(web, "load_auth_state", lambda: {"tenant_id": "tenant-live"})
     monkeypatch.setattr(web, "_connector_for", lambda use_mock: TenantAwareMock())
     monkeypatch.setattr(web, "run_scan", fake_run_scan)
-    response = TestClient(app).post("/scan", data={"tenant_id": "", "mock": "1"})
+    response = TestClient(app).post("/scan", data={"tenant_id": "", "mock": "0"})
 
     assert response.status_code == 200
     assert seen == {"tenant_id": "tenant-live", "save": True}
     assert "tenant-live" in response.text
+
+
+def test_remote_web_requires_operator_login(monkeypatch):
+    from offboard import web
+
+    monkeypatch.setattr(web, "_web_remote_mode", True)
+    monkeypatch.setattr(web, "_web_token", "operator-secret")
+    with web._web_session_lock:
+        web._web_sessions.clear()
+    client = TestClient(app, follow_redirects=False)
+    try:
+        blocked = client.get("/")
+        assert blocked.status_code == 303
+        assert blocked.headers["location"] == "/auth/login"
+        assert client.post("/auth/login", data={"token": "wrong"}).status_code == 401
+        signed_in = client.post("/auth/login", data={"token": "operator-secret"})
+        assert signed_in.status_code == 303
+        assert client.get("/").status_code == 200
+    finally:
+        monkeypatch.setattr(web, "_web_remote_mode", False)
+        monkeypatch.setattr(web, "_web_token", "")
+        with web._web_session_lock:
+            web._web_sessions.clear()
+
+
+def test_state_changing_cross_origin_request_is_rejected():
+    response = TestClient(app).post(
+        "/scan",
+        data={"tenant_id": "demo", "mock": "1"},
+        headers={"Origin": "https://attacker.example"},
+    )
+    assert response.status_code == 403

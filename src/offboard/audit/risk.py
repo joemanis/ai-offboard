@@ -118,14 +118,16 @@ def rule_mfa_gap(principal: Principal) -> Finding | None:
 def rule_high_privilege_app(
     assignment: AppAssignment, catalog_entry: CatalogEntry | None
 ) -> Finding | None:
-    """Rule 4: high-tier app with broad/privileged assignment."""
+    """Rule 4: catalog-matched AI app with a real active assignment."""
     if assignment.is_high_privilege or (catalog_entry and catalog_entry.dlp_tier == "high"):
         app_name = catalog_entry.name if catalog_entry else assignment.app_display_name
+        principal = assignment.principal_display_name or assignment.principal_id or "unknown principal"
+        role = f" role '{assignment.role_display_name}'" if assignment.role_display_name else ""
         return Finding(
             rule_id="R4",
             severity="high",
-            subject=f"{assignment.app_display_name}",
-            evidence=f"High-privilege app '{app_name}' has an active assignment.",
+            subject=assignment.app_display_name,
+            evidence=f"AI app '{app_name}' is assigned to '{principal}'{role}.",
             remediation=[
                 "Review the assigned role scope.",
                 "Remove assignment for departed/durable principals.",
@@ -136,15 +138,19 @@ def rule_high_privilege_app(
 
 
 def rule_high_privilege_grant(grant: PermissionGrant) -> Finding | None:
-    """Rule 5: OAuth grant requesting sensitive delegated scopes."""
+    """Rule 5: delegated or application grant requesting sensitive scopes."""
     granted = {_normalize_scope(s) for s in grant.scope.split(" ") if s.strip()}
     hits = sorted(granted & HIGH_PRIVILEGE_SCOPES)
     if hits:
+        app_name = grant.app_display_name or f"app {grant.app_id[:8]}"
+        resource_name = grant.resource_display_name or grant.resource or "unknown resource"
+        kind = "Application permission" if grant.grant_type == "application" else "Delegated grant"
+        consent = f" ({grant.consent_type} consent)" if grant.consent_type else ""
         return Finding(
             rule_id="R5",
             severity="high",
-            subject=f"app {grant.app_id[:8]}",
-            evidence=f"Delegated grant requests sensitive scopes: {', '.join(hits)}.",
+            subject=app_name,
+            evidence=f"{kind} for '{app_name}' against '{resource_name}'{consent} requests sensitive scopes: {', '.join(hits)}.",
             remediation=[
                 "Review the consent from the tenant admin perspective.",
                 "Restrict to least-privilege scopes.",
@@ -166,7 +172,12 @@ def run_rules(snapshot: TenantSnapshot, apps: list[dict] | None = None) -> list[
         f = rule_high_privilege_app(a, catalog_entry)
         if f:
             findings.append(f)
+    seen_grants: set[tuple[str, str, str, str]] = set()
     for g in snapshot.permission_grants:
+        key = (g.app_id, g.resource, " ".join(sorted(g.scope.lower().split())), g.grant_type)
+        if key in seen_grants:
+            continue
+        seen_grants.add(key)
         f = rule_high_privilege_grant(g)
         if f:
             findings.append(f)

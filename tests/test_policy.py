@@ -24,7 +24,8 @@ def test_demo_tenant_fails_all():
     results = policy.evaluate(snap, findings)
     summary = policy.summarize(results)
     assert summary["overall"] == "FAIL"
-    assert summary["violations"] == 5
+    assert summary["violations"] == 4
+    assert summary["not_assessed"] == 1
     assert summary["by_severity"]["critical"] == 1  # ZT-005 allowlist
 
 

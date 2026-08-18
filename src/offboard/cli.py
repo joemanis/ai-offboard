@@ -399,11 +399,28 @@ def audit(
         if not tenants:
             typer.secho("No tenants registered. Run `offboard tenant add <id>` first.", fg=typer.colors.RED)
             raise typer.Exit(1)
+        from .auth import DeviceCodeAuth, load_auth_state
+
+        auth_state = load_auth_state()
+        device_auth = DeviceCodeAuth(client_id=cfg.public_client_id or "1950a258-227b-4e31-a9cf-717495945fc2")
+        if auth_state.get("mode") == "device_code" or device_auth.has_cached_account:
+            typer.secho(
+                "Refusing multi-tenant sweep with an interactive device-code session. "
+                "Configure client credentials or authenticate each tenant separately.",
+                fg=typer.colors.RED,
+            )
+            raise typer.Exit(1)
+        if not cfg.is_complete:
+            typer.secho(
+                "Multi-tenant sweep requires client-credentials configuration; run `offboard setup` first.",
+                fg=typer.colors.RED,
+            )
+            raise typer.Exit(1)
         typer.secho(f"Scanning {len(tenants)} tenants…", fg=typer.colors.CYAN)
         matrix: list[dict] = []
         for t in tenants:
             try:
-                connector = _pick_connector(False, cfg, prefer_device_code=True)
+                connector = _pick_connector(False, cfg, prefer_device_code=False)
                 result = run_scan(connector, t["tenant_id"], save=True)
                 matrix.append(
                     {
@@ -438,9 +455,11 @@ def audit(
         typer.secho(f"  ⟳ {msg}", fg=typer.colors.CYAN, nl=False)
         _sys.stdout.flush()
 
-    typer.secho(f"Scanning tenant {tid}…", fg=typer.colors.CYAN)
-    result = run_scan(connector, tid, progress_callback=_progress, save=True)
-    typer.secho("[done]", fg=typer.colors.GREEN)
+    if not json_output:
+        typer.secho(f"Scanning tenant {tid}…", fg=typer.colors.CYAN)
+    result = run_scan(connector, tid, progress_callback=None if json_output else _progress, save=True)
+    if not json_output:
+        typer.secho("[done]", fg=typer.colors.GREEN)
     _emit_audit_output(result, json_output, csv_output, report, out_dir)
 
 
@@ -454,7 +473,8 @@ def _emit_audit_output(result, json_output: bool, csv_output: bool, report: bool
                 "scan_timestamp": result.snapshot.scanned_at,
                 "tenant_id": result.snapshot.tenant_id,
                 "principals_found": len(result.snapshot.principals),
-                "app_assignments": len(result.snapshot.app_assignments),
+                "enterprise_apps": result.snapshot.enterprise_app_count if result.snapshot.enterprise_app_count is not None else len(result.snapshot.app_assignments),
+                "app_role_assignments": len(result.snapshot.app_assignments),
                 "findings": [
                     {"rule_id": f.rule_id, "severity": f.severity, "subject": f.subject, "evidence": f.evidence}
                     for f in result.findings
@@ -732,11 +752,16 @@ def policy_check(
 @app.command()
 def web(
     port: Annotated[int, typer.Option("--port", help="Port to serve on")] = 8600,
+    host: Annotated[str, typer.Option("--host", help="Bind address; loopback is the safe default")] = "127.0.0.1",
 ) -> None:
-    """Open the local web UI (option A)."""
+    """Open the web UI. Remote binding requires OFFBOARD_WEB_TOKEN."""
     from .web import run_server  # import here so setup/audit don't need deps
 
-    run_server(port=port)
+    try:
+        run_server(port=port, host=host)
+    except RuntimeError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED)
+        raise typer.Exit(1) from exc
 
 
 @app.command()

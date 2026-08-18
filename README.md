@@ -22,11 +22,14 @@ artifact an insurer, SOC2, or renewal actually accepts.
 
 ## What it does
 
-- Enumerates users, app assignments, and service-principal grants in a
+- Enumerates users, enterprise applications, and **actual** app-role assignments in a
   Microsoft 365 tenant
-- Maps them to an AI-app catalog with **DLP-risk tiers** (high/medium/low)
-- Flags risky access: stale access on departure, MFA gaps, unused high-tier
-  seats, broad high-privilege grants
+- Maps catalog-matched AI apps to their assigned users/groups/service principals,
+  role scopes, and DLP-risk tiers
+- Attributes delegated and application OAuth permissions to readable client and
+  resource applications where Graph provides that evidence
+- Flags risky access: stale access, confirmed MFA-registration gaps, unused
+  high-tier seats, and broad OAuth grants; missing telemetry is marked not assessed
 - Emits a **dry-run revocation plan** (execute nothing)
 - Renders a plain-English **audit report** (.md + .html) an auditor can read
 
@@ -45,6 +48,17 @@ pip install "ai-offboard[web]"     # from PyPI
 offboard web                 # local web UI, then click "Run demo scan"
 offboard audit --tenant demo --mock  # or a terminal report
 ```
+
+The web UI is loopback-only by default. For a tailnet/reverse-proxy deployment,
+use explicit host opt-in plus a token:
+
+```bash
+set OFFBOARD_WEB_TOKEN=<long-random-token>
+offboard web --host <tailnet-ip>
+```
+
+Put remote mode behind HTTPS or Tailscale Serve. It is operator-token protected,
+but the development server should never be exposed directly to the public internet.
 
 ### Connect your tenant (interactive, recommended)
 

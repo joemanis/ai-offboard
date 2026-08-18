@@ -6,12 +6,14 @@ with a single browser login.  Binds to localhost only.
 """
 from __future__ import annotations
 
+import ipaddress
 import os
+import secrets
 import threading
 import webbrowser
 
 from fastapi import FastAPI, Form, Request
-from fastapi.responses import HTMLResponse, PlainTextResponse
+from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -37,6 +39,33 @@ _state: dict = {"result": None, "mode": None}
 # Active device-code flows: {thread_id: {user_code, verification_uri, event, result}}
 _flows: dict = {}
 _flow_lock = threading.Lock()
+_web_remote_mode = False
+_web_token = ""
+_web_sessions: set[str] = set()
+_web_session_lock = threading.Lock()
+
+
+@app.middleware("http")
+async def _web_security(request: Request, call_next) -> Response:
+    """Protect remote mode with a short-lived process-local operator session.
+
+    Local mode remains intentionally frictionless. Remote mode is explicit,
+    token-gated, SameSite-cookie based, and rejects cross-origin state changes.
+    Put it behind HTTPS/Tailscale Serve for transport encryption.
+    """
+    if request.method in {"POST", "PUT", "PATCH", "DELETE"} and request.url.path != "/auth/login":
+        origin = request.headers.get("origin")
+        host = request.headers.get("host", "")
+        if origin and host not in origin:
+            return PlainTextResponse("Cross-origin state change rejected", status_code=403)
+    public = request.url.path in {"/auth/login", "/static/style.css"} or request.url.path.startswith("/static/")
+    if _web_remote_mode and not public:
+        session_id = request.cookies.get("offboard_session", "")
+        with _web_session_lock:
+            authenticated = session_id in _web_sessions
+        if not authenticated:
+            return RedirectResponse("/auth/login", status_code=303)
+    return await call_next(request)
 
 
 def _load_env_into_process() -> None:
@@ -100,6 +129,7 @@ def _policy_view(result) -> tuple[dict, list[dict]]:
             "name": e.policy.name,
             "severity": e.policy.severity,
             "compliant": e.compliant,
+            "status": e.status,
             "evidence": e.evidence,
         }
         for e in evaluations
@@ -138,6 +168,39 @@ async def index(request: Request):
             "repo": _REPO,
         },
     )
+
+
+
+
+@app.get("/auth/login", response_class=HTMLResponse)
+async def web_login_page(request: Request):
+    return HTMLResponse(
+        """<!doctype html><html><head><meta charset='utf-8'><title>ai-offboard operator login</title>
+        <style>body{font:16px system-ui;max-width:460px;margin:12vh auto;padding:24px;background:#10151c;color:#eef2f7}
+        input,button{font:inherit;padding:10px;margin-top:8px;width:100%;box-sizing:border-box}button{cursor:pointer}</style>
+        </head><body><h1>ai-offboard</h1><p>Remote operator access is enabled. Enter the shared operator token.</p>
+        <form method='post' action='/auth/login'><label>Operator token<input type='password' name='token' autocomplete='current-password' required></label>
+        <button type='submit'>Sign in</button></form></body></html>"""
+    )
+
+
+@app.post("/auth/login")
+async def web_login(token: str = Form("")):
+    if not _web_token or not secrets.compare_digest(token, _web_token):
+        return PlainTextResponse("Invalid operator token", status_code=401)
+    session_id = secrets.token_urlsafe(32)
+    with _web_session_lock:
+        _web_sessions.add(session_id)
+    response = RedirectResponse("/", status_code=303)
+    response.set_cookie(
+        "offboard_session",
+        session_id,
+        httponly=True,
+        samesite="strict",
+        secure=os.getenv("OFFBOARD_WEB_SECURE_COOKIE", "0") == "1",
+        max_age=8 * 60 * 60,
+    )
+    return response
 
 
 @app.get("/auth/start")
@@ -232,9 +295,15 @@ async def scan(request: Request, tenant_id: str = Form(""), mock: str = Form("0"
     use_mock = mock in ("1", "true", "on")
     auth_state = load_auth_state()
     cfg = load_config()
+    authenticated_tenant = auth_state.get("tenant_id", "")
+    if not use_mock and authenticated_tenant and tenant_id and tenant_id != authenticated_tenant:
+        return PlainTextResponse(
+            "The authenticated session is bound to a different tenant. Disconnect and sign in to the requested tenant.",
+            status_code=400,
+        )
     # A connected device-code session already knows the tenant. Do not label a
     # live scan as `demo` just because the optional form field was blank.
-    tid = tenant_id or auth_state.get("tenant_id", "") or cfg.tenant_id or "demo"
+    tid = (tenant_id or "demo") if use_mock else (authenticated_tenant or tenant_id or cfg.tenant_id or "demo")
     try:
         connector = _connector_for(use_mock)
         result = run_scan(connector, tid, save=True)
@@ -250,8 +319,10 @@ async def scan(request: Request, tenant_id: str = Form(""), mock: str = Form("0"
                 "request": request,
                 "findings": result.findings,
                 "principal_count": len(result.snapshot.principals),
-                "app_count": len(result.snapshot.app_assignments),
+                "app_count": result.snapshot.enterprise_app_count if result.snapshot.enterprise_app_count is not None else len(result.snapshot.app_assignments),
+                "assignment_count": len(result.snapshot.app_assignments),
                 "apps": _catalog_matches(result.snapshot),
+                "coverage": result.snapshot.coverage,
                 "tenant_id": result.snapshot.tenant_id,
                 "scanned_at": result.snapshot.scanned_at,
                 "report_md": result.report_md,
@@ -349,8 +420,8 @@ async def auth_register_save(request: Request, client_id: str = Form("")):
     return HTMLResponse('<meta http-equiv="refresh" content="1;url=/auth/start?provision=0"><p>Client ID saved. Redirecting to sign-in...</p>')
 
 
-@app.get("/auth/logout")
-async def auth_logout():
+@app.post("/auth/logout")
+async def auth_logout(request: Request):
     """Disconnect: clear tokens, cached auth state, AND the saved client ID.
 
     After this the landing page shows the fresh 'Connect Microsoft 365'
@@ -372,22 +443,58 @@ async def auth_logout():
         print(f"[auth] .env cleanup warning: {exc}")
     # 3) Drop it from the running process so the next /auth/start sees fresh state
     os.environ.pop("OFFBOARD_PUBLIC_CLIENT_ID", None)
-    return HTMLResponse(
+    session_id = request.cookies.get("offboard_session", "")
+    with _web_session_lock:
+        _web_sessions.discard(session_id)
+    response = HTMLResponse(
         '<meta http-equiv="refresh" content="2;url=/"><p>Disconnected. Redirecting…</p>'
     )
+    response.delete_cookie("offboard_session")
+    return response
 
 
-def run_server(port: int = 8600, open_browser: bool = True) -> None:
-    """Start the local server in a thread and open the browser."""
+def run_server(
+    port: int = 8600,
+    open_browser: bool = True,
+    host: str = "127.0.0.1",
+) -> None:
+    """Start the web UI.
+
+    Loopback is the safe default. Binding remotely requires OFFBOARD_WEB_TOKEN
+    and should be placed behind HTTPS, Tailscale Serve, or an authenticated
+    reverse proxy.
+    """
     import uvicorn
+
+    global _web_remote_mode, _web_token
+    try:
+        remote = not ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        remote = host.lower() not in {"localhost"}
+    token = os.getenv("OFFBOARD_WEB_TOKEN", "")
+    if remote and not token:
+        raise RuntimeError(
+            "Remote web binding is disabled without OFFBOARD_WEB_TOKEN. "
+            "Set a token and put the service behind HTTPS/Tailscale Serve."
+        )
+    _web_remote_mode = remote
+    _web_token = token
+    with _web_session_lock:
+        _web_sessions.clear()
 
     def _open() -> None:
         import time
 
         time.sleep(1.0)
         if open_browser:
-            webbrowser.open(f"http://127.0.0.1:{port}/")
+            webbrowser.open(f"http://{host}:{port}/")
 
     threading.Thread(target=_open, daemon=True).start()
-    print(f"ai-offboard web UI: http://127.0.0.1:{port}/  (Ctrl+C to stop)")
-    uvicorn.run(app, host="127.0.0.1", port=port)
+    if remote:
+        print(
+            f"ai-offboard remote web UI: http://{host}:{port}/  "
+            "(token protected; use HTTPS/Tailscale Serve; Ctrl+C to stop)"
+        )
+    else:
+        print(f"ai-offboard web UI: http://127.0.0.1:{port}/  (Ctrl+C to stop)")
+    uvicorn.run(app, host=host, port=port)
