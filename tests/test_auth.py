@@ -30,7 +30,7 @@ class FakeDeviceFlowApp:
         return response
 
 
-def make_auth(fake_app: FakeDeviceFlowApp) -> DeviceCodeAuth:
+def make_auth(fake_app: object) -> DeviceCodeAuth:
     auth = object.__new__(DeviceCodeAuth)
     auth._client_id = "client-id"
     auth._cache = SimpleNamespace(has_state_changed=False)
@@ -85,3 +85,31 @@ def test_expired_device_code_reports_actionable_error(monkeypatch) -> None:
 
     assert result["error"] == "device_code_expired"
     assert "expired" in result["error_description"].lower()
+
+
+def test_cached_auth_is_validated_silently() -> None:
+    class App:
+        def get_accounts(self) -> list[dict]:
+            return [{"username": "joe@example.com"}]
+
+        def acquire_token_silent(self, scopes: list[str], account: dict) -> dict:
+            return {"access_token": "token"}
+
+    auth = make_auth(SimpleNamespace())
+    auth._app = App()
+
+    assert auth.has_valid_cached_token() is True
+
+
+def test_cached_auth_is_reported_invalid_when_silent_refresh_fails() -> None:
+    class App:
+        def get_accounts(self) -> list[dict]:
+            return [{"username": "joe@example.com"}]
+
+        def acquire_token_silent(self, scopes: list[str], account: dict) -> dict:
+            return {"error": "no_tokens_found"}
+
+    auth = make_auth(SimpleNamespace())
+    auth._app = App()
+
+    assert auth.has_valid_cached_token() is False

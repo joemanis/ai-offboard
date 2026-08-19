@@ -184,7 +184,20 @@ def auth_status() -> None:
 
     typer.secho("ai-offboard auth status", bold=True)
     if state.get("mode") == "device_code":
-        typer.secho(f"  Device code login: active (tenant {state.get('tenant_id', '?')})", fg=typer.colors.GREEN)
+        if cfg.public_client_id:
+            auth = DeviceCodeAuth(client_id=cfg.public_client_id)
+            if auth.has_valid_cached_token():
+                typer.secho(
+                    f"  Device code login: valid (tenant {state.get('tenant_id', '?')})",
+                    fg=typer.colors.GREEN,
+                )
+                return
+        typer.secho(
+            f"  Device code login: expired or unavailable (tenant {state.get('tenant_id', '?')})",
+            fg=typer.colors.RED,
+        )
+        typer.echo("  Run `offboard auth login` to authenticate again.")
+        raise typer.Exit(1)
     elif has_creds:
         typer.secho(f"  Client credentials: configured (tenant {cfg.tenant_id})", fg=typer.colors.GREEN)
     else:

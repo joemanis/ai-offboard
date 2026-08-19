@@ -139,6 +139,20 @@ class DeviceCodeAuth:
     def has_cached_account(self) -> bool:
         return len(self._app.get_accounts()) > 0
 
+    def has_valid_cached_token(self) -> bool:
+        """Return whether silent auth can currently produce a Graph token."""
+        accounts = self._app.get_accounts()
+        if not accounts:
+            return False
+        try:
+            result = self._app.acquire_token_silent(DEVICE_CODE_SCOPES, account=accounts[0])
+        except Exception:  # noqa: BLE001 - status must remain a safe diagnostic
+            return False
+        if not result or "access_token" not in result:
+            return False
+        _save_token_cache(self._cache)
+        return True
+
     def cached_tenant_id(self) -> str | None:
         """Tenant id of the first cached account, if any."""
         accounts = self._app.get_accounts()

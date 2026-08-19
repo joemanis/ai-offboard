@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.4.5 (2026-08-19)
+
+Authentication status accuracy patch.
+
+### Fixed
+- `offboard auth status` now silently validates the cached device-code token
+  before reporting the session as valid.
+- Stale auth markers are reported as `expired or unavailable` with a direct
+  re-login instruction, and the command exits nonzero.
+- A successful silent refresh updates the local MSAL token cache.
+
 ## 0.4.4 (2026-08-19)
 
 Device-code expiry messaging patch.
