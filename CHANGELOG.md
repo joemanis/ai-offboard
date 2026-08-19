@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.4.4 (2026-08-19)
+
+Device-code expiry messaging patch.
+
+### Fixed
+- Report a clear actionable error when Microsoft sign-in was not completed
+  before the device code expired, rather than repeating the misleading
+  `authorization pending` response.
+- Added regression coverage for expired device-code flows.
+
 ## 0.4.3 (2026-08-19)
 
 Device-code authentication reliability patch.
