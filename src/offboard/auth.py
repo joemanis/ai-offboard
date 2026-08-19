@@ -54,7 +54,7 @@ class AuthResult:
 class AuthProvider(Protocol):
     """Anything that can produce a usable access token."""
 
-    def authenticate(self) -> AuthResult:
+    def authenticate(self, scopes: list[str] | None = None, interactive: bool = True) -> AuthResult:
         ...
 
 
@@ -103,7 +103,7 @@ class ClientCredentialsAuth:
         )
         self._tenant_id = authority.rstrip("/").rsplit("/", 1)[-1]
 
-    def authenticate(self) -> AuthResult:
+    def authenticate(self, scopes: list[str] | None = None, interactive: bool = True) -> AuthResult:
         result = self._app.acquire_token_for_client(scopes=[GRAPH_SCOPE])
         if "access_token" not in result:
             raise RuntimeError(f"Auth failed: {result.get('error_description')}")
@@ -147,7 +147,7 @@ class DeviceCodeAuth:
         tid = getattr(accounts[0], "tenant_id", None)
         return tid or _tenant_from_token(accounts[0].get("id_token_claims", {}).get("tid", ""))
 
-    def authenticate(self, scopes: list[str] | None = None) -> AuthResult:
+    def authenticate(self, scopes: list[str] | None = None, interactive: bool = True) -> AuthResult:
         scopes = scopes or DEVICE_CODE_SCOPES
         # 1) Try silent auth from the cached refresh token
         accounts = self._app.get_accounts()
@@ -163,6 +163,16 @@ class DeviceCodeAuth:
                     account=accounts[0].get("username"),
                     mode=self.mode,
                 )
+            if not interactive:
+                raise RuntimeError(
+                    "Cached Microsoft login expired. Run `offboard auth login` before "
+                    "using --json or --bundle."
+                )
+        elif not interactive:
+            raise RuntimeError(
+                "No cached Microsoft login. Run `offboard auth login` before using "
+                "--json or --bundle."
+            )
         self._flow = self._app.initiate_device_flow(scopes=DEVICE_CODE_SCOPES)
         if "user_code" not in self._flow:
             raise RuntimeError(f"Device flow failed: {self._flow.get('error_description')}")

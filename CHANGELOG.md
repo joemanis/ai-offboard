@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.4.2 (2026-08-18)
+
+Noninteractive audit reliability patch.
+
+### Fixed
+- `audit --json` and `audit --bundle` now fail fast when the cached Microsoft
+  login is missing or expired instead of blocking on a device-code prompt.
+- Authentication failures are rendered as concise CLI errors instead of Rich
+  tracebacks or invalid JSON output.
+
 ## 0.4.1 (2026-08-18)
 
 Live-scan reliability patch.
