@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -147,6 +148,37 @@ class DeviceCodeAuth:
         tid = getattr(accounts[0], "tenant_id", None)
         return tid or _tenant_from_token(accounts[0].get("id_token_claims", {}).get("tid", ""))
 
+    def _poll_device_flow(self, timeout: int | None = None) -> dict:
+        """Poll the device token endpoint until success or a terminal error.
+
+        MSAL 1.37 returns one token response per call, so authorization_pending
+        must be handled by the application rather than assumed to be fatal.
+        """
+        if self._flow is None:
+            raise RuntimeError("No active device flow. Call initiate_device_flow() first.")
+        flow = self._flow
+        interval = max(float(flow.get("interval", 5)), 1.0)
+        flow_expires_at = float(flow.get("expires_at", time.time() + flow.get("expires_in", 900)))
+        deadline = flow_expires_at
+        if timeout is not None:
+            deadline = min(deadline, time.time() + timeout)
+
+        while True:
+            result = self._app.acquire_token_by_device_flow(flow)
+            if "access_token" in result:
+                return result
+            error = str(result.get("error", "")).lower()
+            description = str(result.get("error_description", "")).lower()
+            pending = error in {"authorization_pending", "slow_down"} or "aadsts70016" in description
+            if not pending:
+                return result
+            remaining = deadline - time.time()
+            if remaining <= 0:
+                return result
+            time.sleep(min(interval, remaining))
+            if error == "slow_down":
+                interval += 5
+
     def authenticate(self, scopes: list[str] | None = None, interactive: bool = True) -> AuthResult:
         scopes = scopes or DEVICE_CODE_SCOPES
         # 1) Try silent auth from the cached refresh token
@@ -181,7 +213,7 @@ class DeviceCodeAuth:
         print("  2. Enter code:", self._flow["user_code"])
         print("  3. Sign in and approve when prompted.")
         print("=" * 60)
-        result = self._app.acquire_token_by_device_flow(self._flow)
+        result = self._poll_device_flow()
         if "access_token" not in result:
             raise RuntimeError(f"Device flow failed: {result.get('error_description')}")
         _save_token_cache(self._cache)
@@ -223,13 +255,13 @@ class DeviceCodeAuth:
     def finish_web_flow(self, timeout: int = 300) -> AuthResult:
         """Block until the user completes the flow (call from a worker thread).
 
-        MSAL's device flow already polls internally until the user finishes
-        (or the flow expires), so no exit-condition hook is needed — and the
-        `exit_condition_fn` kwarg isn't accepted by older msal versions.
+        The wrapper explicitly polls because current MSAL releases return one
+        token response per call rather than handling authorization_pending
+        internally.
         """
         if self._flow is None:
             raise RuntimeError("No active device flow. Call begin_web_flow() first.")
-        result = self._app.acquire_token_by_device_flow(self._flow)
+        result = self._poll_device_flow(timeout=timeout)
         if "access_token" not in result:
             raise RuntimeError(f"Device flow failed: {result.get('error_description')}")
         _save_token_cache(self._cache)
