@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.4.3 (2026-08-19)
+
+Device-code authentication reliability patch.
+
+### Fixed
+- Explicitly poll Microsoft device-code token responses until approval,
+  expiration, or a terminal error.
+- Handle transient `authorization_pending`, `AADSTS70016`, and `slow_down`
+  responses without aborting login.
+- Apply the same polling behavior to CLI and web authentication flows.
+
 ## 0.4.2 (2026-08-18)
 
 Noninteractive audit reliability patch.
