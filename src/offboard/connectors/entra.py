@@ -28,8 +28,9 @@ from .base import (
 class EntraConnector(Connector):
     """Scan a Microsoft 365 / Entra tenant using GET-only Graph calls."""
 
-    def __init__(self, auth: AuthProvider) -> None:
+    def __init__(self, auth: AuthProvider, allow_interactive: bool = True) -> None:
         self._auth_provider = auth
+        self._allow_interactive = allow_interactive
         self._access_token: str | None = None
         self._signin_activity_unavailable = False
 
@@ -39,7 +40,10 @@ class EntraConnector(Connector):
 
     def _auth(self) -> str:
         if not self._access_token:
-            self._access_token = self._auth_provider.authenticate().token
+            if self._allow_interactive:
+                self._access_token = self._auth_provider.authenticate().token
+            else:
+                self._access_token = self._auth_provider.authenticate(interactive=False).token
         return self._access_token
 
     def test_auth(self) -> bool:

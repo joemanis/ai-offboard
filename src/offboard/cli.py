@@ -47,11 +47,15 @@ def main(
 
 
 def _pick_connector(
-    mock: bool, cfg, prefer_device_code: bool = False
+    mock: bool, cfg, prefer_device_code: bool = False, allow_interactive: bool = True
 ) -> MockConnector | EntraConnector:
     if mock:
         return MockConnector()
-    return build_connector(cfg, prefer_device_code=prefer_device_code)
+    return build_connector(
+        cfg,
+        prefer_device_code=prefer_device_code,
+        allow_interactive=allow_interactive,
+    )
 
 
 def _resolve_tenant_id(cfg, audit: bool = False) -> str:
@@ -439,7 +443,12 @@ def audit(
         return
 
     try:
-        connector = _pick_connector(mock, cfg, prefer_device_code=True)
+        connector = _pick_connector(
+            mock,
+            cfg,
+            prefer_device_code=True,
+            allow_interactive=not (json_output or bundle),
+        )
     except RuntimeError as exc:
         typer.secho(str(exc), fg=typer.colors.RED)
         raise typer.Exit(1) from exc
@@ -458,7 +467,11 @@ def audit(
 
     if not json_output:
         typer.secho(f"Scanning tenant {tid}…", fg=typer.colors.CYAN)
-    result = run_scan(connector, tid, progress_callback=None if json_output else _progress, save=True)
+    try:
+        result = run_scan(connector, tid, progress_callback=None if json_output else _progress, save=True)
+    except RuntimeError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED)
+        raise typer.Exit(1) from exc
     if not json_output:
         typer.secho("[done]", fg=typer.colors.GREEN)
     _emit_audit_output(result, json_output, csv_output, report, out_dir, bundle)

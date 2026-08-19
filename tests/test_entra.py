@@ -3,7 +3,22 @@ from __future__ import annotations
 import threading
 from types import SimpleNamespace
 
+from offboard.auth import AuthResult
 from offboard.connectors.entra import EntraConnector
+
+
+def test_noninteractive_connector_passes_through_to_auth_provider() -> None:
+    calls: list[dict] = []
+
+    class Provider:
+        def authenticate(self, scopes: list[str] | None = None, interactive: bool = True) -> AuthResult:
+            calls.append({"interactive": interactive})
+            return AuthResult(token="token", tenant_id="tenant")
+
+    connector = EntraConnector(Provider(), allow_interactive=False)
+
+    assert connector._auth() == "token"
+    assert calls == [{"interactive": False}]
 
 
 def test_app_role_assignment_payload_maps_principal_and_role() -> None:

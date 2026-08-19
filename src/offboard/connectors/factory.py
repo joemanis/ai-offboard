@@ -16,17 +16,21 @@ from .entra import EntraConnector
 from .workspace import WorkspaceConnector
 
 
-def build_connector(cfg: Config, prefer_device_code: bool = False) -> EntraConnector:
+def build_connector(
+    cfg: Config,
+    prefer_device_code: bool = False,
+    allow_interactive: bool = True,
+) -> EntraConnector:
     """Build the best Microsoft Entra connector for the current environment."""
     # 1) Device-code session already established (interactive Global Admin login)
     device = DeviceCodeAuth(client_id=cfg.public_client_id or _DEFAULT_PUBLIC_CLIENT_ID)
     if prefer_device_code or device.has_cached_account or load_auth_state().get("mode") == "device_code":
-        return EntraConnector(device)
+        return EntraConnector(device, allow_interactive=allow_interactive)
 
     # 2) Client credentials (CI / service account)
     if cfg.is_complete:
         auth = ClientCredentialsAuth(cfg.client_id, cfg.client_secret, cfg.authority)
-        return EntraConnector(auth)
+        return EntraConnector(auth, allow_interactive=allow_interactive)
 
     # 3) Nothing usable
     raise RuntimeError(
