@@ -174,7 +174,13 @@ class DeviceCodeAuth:
                 return result
             remaining = deadline - time.time()
             if remaining <= 0:
-                return result
+                return {
+                    "error": "device_code_expired",
+                    "error_description": (
+                        "Device code expired before Microsoft sign-in was completed. "
+                        "Run `offboard auth login` again and finish approval before the code expires."
+                    ),
+                }
             time.sleep(min(interval, remaining))
             if error == "slow_down":
                 interval += 5

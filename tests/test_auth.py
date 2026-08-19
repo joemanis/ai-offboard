@@ -64,3 +64,24 @@ def test_device_code_login_keeps_polling_while_authorization_is_pending(monkeypa
         account="joe@example.com",
     )
     assert app.calls == 2
+
+
+def test_expired_device_code_reports_actionable_error(monkeypatch) -> None:
+    app = FakeDeviceFlowApp(
+        [{
+            "error": "authorization_pending",
+            "error_description": "AADSTS70016: Authorization is pending.",
+        }]
+    )
+    auth = make_auth(app)
+    auth._flow = {
+        "device_code": "device-code",
+        "interval": 1,
+        "expires_at": 100,
+    }
+    monkeypatch.setattr(auth_module.time, "time", lambda: 101)
+
+    result = auth._poll_device_flow()
+
+    assert result["error"] == "device_code_expired"
+    assert "expired" in result["error_description"].lower()
