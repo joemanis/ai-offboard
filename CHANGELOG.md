@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.6 (2026-08-26)
 
 Focused AI access cleanup scope.
 
