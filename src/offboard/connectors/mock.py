@@ -23,24 +23,36 @@ class MockConnector(Connector):
             tenant_id="demo",
             scanned_at="2026-01-01T00:00:00Z",
             principals=[
-                Principal(id="u1", name="active@example.com", type="user", enabled=True, mfa_state="registered"),
-                Principal(id="u2", name="stale@example.com", type="user", enabled=False, mfa_state=None, sign_in_last_seen="2025-06-15T00:00:00Z"),
-                Principal(id="u3", name="nomfa@example.com", type="user", enabled=True, mfa_state="not_registered"),
+                Principal(id="u1", name="active@example.com", type="user", enabled=True),
+                Principal(id="u2", name="disabled@example.com", type="user", enabled=False),
+                Principal(id="u3", name="owner@example.com", type="user", enabled=True),
             ],
             # Service Principals are mapped as AppAssignments (enterprise apps).
             # The catalog matcher in scan.py will pick up Copilot and ChatGPT
             # as AI tools, while Some Internal App goes unmatched.
             app_assignments=[
                 AppAssignment(principal_id="u1", app_display_name="Microsoft 365 Copilot", is_high_privilege=True),
-                AppAssignment(principal_id="u3", app_display_name="ChatGPT Enterprise", is_high_privilege=False),
+                AppAssignment(principal_id="u2", app_display_name="ChatGPT Enterprise", is_high_privilege=False),
                 AppAssignment(principal_id="u1", app_display_name="SomeInternalApp", is_high_privilege=False),
             ],
             # OAuth permission grants — delegated scopes consented to apps
             permission_grants=[
-                PermissionGrant(app_id="copilot-guid", resource="https://graph.microsoft.com", scope="Mail.Read Mail.Send Files.Read.All", grant_type="delegated"),
+                PermissionGrant(
+                    app_id="copilot-guid",
+                    resource="https://graph.microsoft.com",
+                    scope="Mail.Read Mail.Send Files.Read.All",
+                    grant_type="delegated",
+                    app_display_name="Microsoft 365 Copilot",
+                    resource_display_name="Microsoft Graph",
+                ),
                 PermissionGrant(app_id="salesforce-guid", resource="https://api.salesforce.com", scope="user_impersonation", grant_type="delegated"),
             ],
         )
 
-    def snapshot(self, tenant_id: str, progress_callback: Callable[[str], None] | None = None) -> TenantSnapshot:
-            return self._tenants[tenant_id]
+    def snapshot(
+        self,
+        tenant_id: str,
+        progress_callback: Callable[[str], None] | None = None,
+        sign_in_context: bool = False,
+    ) -> TenantSnapshot:
+        return self._tenants[tenant_id]

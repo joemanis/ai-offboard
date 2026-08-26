@@ -25,7 +25,7 @@
   and logs every mutation).
 - Wire new risk rules into `src/offboard/audit/risk.py` with a unit test in
   `tests/test_risk.py`.
-- Add new Zero Trust policies to `src/offboard/policies/default/baseline.yml`
+- Add new AI access policies to `src/offboard/policies/default/baseline.yml`
   using only **named checks** registered in `src/offboard/policy.py` — policy
   files must never execute code.
 - Run `ruff check . && pytest` before opening a PR.

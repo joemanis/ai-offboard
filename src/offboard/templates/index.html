@@ -1,22 +1,21 @@
 {% extends "base.html" %}
-{% block title %}ai-offboard — AI Access Audit{% endblock %}
+{% block title %}ai-offboard — AI Access Cleanup{% endblock %}
 
 {% block content %}
   <section class="hero">
-    <h1>Audit your AI access. Hand over the report.</h1>
-    <p class="tag">Scan a Microsoft 365 tenant, find risky &amp; orphaned AI access, and produce a
-      compliance-ready audit you can hand to an insurer or auditor. Read-only by design.</p>
+    <h1>Find unwanted AI access. Clean it up with proof.</h1>
+    <p class="tag">Scan a Microsoft 365 or Google Workspace tenant, find connected AI applications and risky access, then produce a clear cleanup plan. Read-only by design.</p>
   </section>
 
   {% if error %}
     <div class="alert error">{{ error }}</div>
   {% endif %}
 
-  {% if auth_connected %}
+  {% if auth_status == "connected" %}
         <div style="border:1px solid var(--green, #3fb950);border-radius:14px;padding:20px 24px;margin:4px 0 18px;text-align:center;background:linear-gradient(180deg, rgba(63,185,80,0.10), rgba(63,185,80,0.02));">
           <div style="font-size:1.15rem;font-weight:700;margin-bottom:6px">✓ Connected</div>
           <p style="margin:0 0 14px;color:var(--text-dim);font-size:0.9rem">
-            Connected to tenant <code>{{ auth_tenant }}</code>. Ready to run a live audit.
+            Microsoft sign-in is valid for tenant <code>{{ auth_tenant }}</code>. Ready to run a live audit.
           </p>
           <form method="post" action="/auth/logout" style="display:inline">
             <button class="btn" type="submit"
@@ -25,6 +24,17 @@
             </button>
           </form>
           <p class="note" style="margin:10px 0 0">Disconnecting returns you to a clean setup — no app ID retained.</p>
+        </div>
+      {% elif auth_status == "expired" %}
+        <div style="border:1px solid var(--amber, #d29922);border-radius:14px;padding:20px 24px;margin:4px 0 18px;text-align:center;background:linear-gradient(180deg, rgba(210,153,34,0.12), rgba(210,153,34,0.03));">
+          <div style="font-size:1.15rem;font-weight:700;margin-bottom:6px">Microsoft sign-in needs attention</div>
+          <p style="margin:0 0 14px;color:var(--text-dim);font-size:0.9rem">
+            The previous device-code login is expired or unavailable. Generate a new code and approve sign-in before running a live audit.
+          </p>
+          <a class="btn" href="/auth/start" style="font-size:0.98rem;padding:10px 22px">Generate new device code</a>
+          {% if auth_tenant %}
+          <p class="note" style="margin:10px 0 0">The old session for tenant <code>{{ auth_tenant }}</code> is not being treated as connected.</p>
+          {% endif %}
         </div>
       {% elif configured %}
         <div class="alert ok">Client credentials configured for tenant <code>{{ tenant_id }}</code>.</div>
@@ -46,28 +56,39 @@
 
   <div class="card">
     <h2>Run a live audit</h2>
-    <p class="sub">Scans the tenant for enterprise apps, access grants, and risk findings.</p>
-    <form method="post" action="/scan" onsubmit="setLoading(this)">
+    <p class="sub">Scans connected AI applications, assignments, OAuth consent, and data access scopes.</p>
+    <form method="post" action="/scan" onsubmit="startScan(event, this)">
       <label for="tenant">Tenant ID (optional — auto-detected when signed in)</label>
       <input type="text" id="tenant" name="tenant_id"
              placeholder="00000000-0000-0000-0000-000000000000" value="{{ tenant_id }}">
       <input type="hidden" name="mock" value="0">
-      <button class="btn" type="submit" {% if not configured and not auth_connected %}disabled{% endif %}>
+      <button class="btn" type="submit" {% if (not configured and not auth_connected) or auth_status == "expired" %}disabled{% endif %}>
         <span class="spinner" style="display:none"></span>
         <span class="btn-label">
           {% if auth_connected %}Scan tenant (live){% elif configured %}Scan tenant (live){% else %}Scan tenant (live){% endif %}
         </span>
       </button>
     </form>
-    {% if not configured and not auth_connected %}
+    {% if auth_status == "none" and not configured %}
       <p class="note" style="margin:10px 0 0">
         <a href="/auth/start">Connect Microsoft 365</a> first, or run <code>offboard setup</code>.
       </p>
     {% endif %}
 
+    <div id="scan-progress" class="scan-progress" hidden aria-live="polite">
+      <div class="scan-progress-head">
+        <strong>Scanning tenant</strong>
+        <span id="scan-progress-percent">0%</span>
+      </div>
+      <div class="progress-track" role="progressbar" aria-label="Tenant scan progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+        <div id="scan-progress-bar" class="progress-bar" style="width:0%"></div>
+      </div>
+      <p id="scan-progress-message" class="scan-progress-message">Starting scan…</p>
+    </div>
+
     <div class="or">or</div>
 
-    <form method="post" action="/scan" onsubmit="setLoading(this)">
+    <form method="post" action="/scan" onsubmit="startScan(event, this)">
       <input type="hidden" name="tenant_id" value="demo">
       <input type="hidden" name="mock" value="1">
       <button class="btn ghost" type="submit">
@@ -80,7 +101,7 @@
       {% if mode == "demo" and demo_findings %}
       <div class="card">
         <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
-          <h2 style="margin:0">Sample — AI Access Audit</h2>
+          <h2 style="margin:0">Sample — AI Access Report</h2>
           <span class="pill demo"><span class="dot"></span>pre-seeded demo</span>
         </div>
         <p class="sub">A demo scan is pre-loaded. Start here to see what ai-offboard produces.</p>
@@ -93,7 +114,7 @@
                 {% if policy_evals %}
                 <div style="margin:0 0 20px">
                   <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:10px">
-                    <h3 style="margin:0">Zero Trust policy compliance</h3>
+                    <h3 style="margin:0">AI access policy compliance</h3>
                     <span style="font-size:0.78rem;font-weight:600;padding:3px 10px;border-radius:99px;background:{{ '#123524' if policy_summary.overall == 'PASS' else '#3a2418' }};color:{{ '#4ade80' if policy_summary.overall == 'PASS' else '#fb923c' }}">
                       {{ policy_summary.overall }} · {{ policy_summary.compliant }}/{{ policy_summary.total }} passing
                     </span>
@@ -128,15 +149,60 @@
 
 {% block scripts %}
 <script>
-function setLoading(form) {
-  var btn = form.querySelector("button[type=submit]");
-  btn.disabled = true;
-  var spin = btn.querySelector(".spinner");
-  var label = btn.querySelector(".btn-label");
-  var text = label ? label.textContent : btn.textContent;
-  if (spin) spin.style.display = "inline-block";
-  if (label) label.textContent = "Scanning…";
-  else btn.textContent = "Scanning…";
+function updateScanProgress(progress, message) {
+  var panel = document.getElementById("scan-progress");
+  var bar = document.getElementById("scan-progress-bar");
+  var percent = document.getElementById("scan-progress-percent");
+  var text = document.getElementById("scan-progress-message");
+  var track = panel.querySelector("[role=progressbar]");
+  progress = Math.max(0, Math.min(100, Number(progress) || 0));
+  panel.hidden = false;
+  bar.style.width = progress + "%";
+  percent.textContent = progress + "%";
+  text.textContent = message || "Scanning…";
+  track.setAttribute("aria-valuenow", String(progress));
+}
+
+function setScanButtonsDisabled(disabled) {
+  document.querySelectorAll("form[action='/scan'] button[type=submit]").forEach(function(button) {
+    button.disabled = disabled;
+  });
+}
+
+async function startScan(event, form) {
+  event.preventDefault();
+  setScanButtonsDisabled(true);
+  updateScanProgress(3, "Starting scan…");
+  try {
+    var response = await fetch("/scan/start", {
+      method: "POST",
+      body: new FormData(form),
+      headers: {"Accept": "application/json"}
+    });
+    if (!response.ok) throw new Error(await response.text() || "Could not start scan");
+    var start = await response.json();
+    var jobId = start.job_id;
+    while (true) {
+      await new Promise(function(resolve) { setTimeout(resolve, 500); });
+      var statusResponse = await fetch("/scan/status?job_id=" + encodeURIComponent(jobId), {cache: "no-store"});
+      var status = await statusResponse.json();
+      if (status.status === "complete") {
+        updateScanProgress(100, status.message || "Audit complete");
+        window.location.href = status.location;
+        return;
+      }
+      if (status.status === "error" || status.status === "unknown") {
+        throw new Error(status.error || "Scan failed");
+      }
+      updateScanProgress(status.progress, status.message);
+    }
+  } catch (error) {
+    updateScanProgress(0, "Scan failed");
+    var panel = document.getElementById("scan-progress");
+    panel.classList.add("scan-progress-error");
+    document.getElementById("scan-progress-message").textContent = error.message;
+    setScanButtonsDisabled(false);
+  }
 }
 </script>
 {% endblock %}

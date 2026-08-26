@@ -6,7 +6,6 @@ with severity + remediation steps. Read-only, pure functions for testability.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import UTC
 
 from ..catalog.matcher import CatalogEntry, match_app
 from ..connectors.base import AppAssignment, PermissionGrant, Principal, TenantSnapshot
@@ -50,6 +49,11 @@ HIGH_PRIVILEGE_SCOPES = frozenset(
     }
 )
 
+# The scanner necessarily grants itself read-only Graph access to inventory
+# the tenant. Keep that grant in the raw snapshot, but never turn it into a
+# customer-facing broad-grant finding.
+SELF_APP_DISPLAY_NAMES = frozenset({"ai-offboard"})
+
 
 def _normalize_scope(scope: str) -> str:
     """Reduce a scope to a comparable key.
@@ -65,52 +69,23 @@ def _normalize_scope(scope: str) -> str:
     return key
 
 
-def rule_stale_access(principal: Principal, no_signin_days: int = 90) -> Finding | None:
-    """Rule 1: disabled accounts, or enabled accounts with no recent sign-in."""
-    from datetime import datetime
-
-    if not principal.enabled:
+def rule_stale_access(principal: Principal, assignments: list[AppAssignment]) -> Finding | None:
+    """Rule 1: a disabled account retains a connected AI app assignment."""
+    retained = [assignment for assignment in assignments if assignment.principal_id == principal.id]
+    if not principal.enabled and retained:
+        app_names = sorted({assignment.app_display_name for assignment in retained})
         return Finding(
             rule_id="R1",
             severity="medium",
             subject=principal.name,
-            evidence=f"Account '{principal.name}' is disabled in directory.",
-            remediation=["Confirm no durable app assignments remain.", "Revoke tokens/SSO sessions."],
-        )
-    if principal.sign_in_last_seen:
-        try:
-            last = datetime.fromisoformat(principal.sign_in_last_seen)
-            now = datetime.now(UTC)
-            days = (now - last).days
-            if days >= no_signin_days:
-                return Finding(
-                    rule_id="R1",
-                    severity="medium",
-                    subject=principal.name,
-                    evidence=f"Account '{principal.name}' has not signed in for {days} days (>= {no_signin_days}).",
-                    remediation=[
-                        "Review whether the account is still needed.",
-                        "Consider license removal / access revocation.",
-                    ],
-                )
-        except ValueError:
-            pass  # unparseable date: skip heuristic
-    return None
-
-
-def rule_mfa_gap(principal: Principal) -> Finding | None:
-    """Rule 2: account enabled and explicitly reported as not MFA-registered.
-
-    ``None`` means the connector did not collect MFA state. Unknown is not the
-    same thing as a confirmed MFA gap, so missing telemetry is skipped here.
-    """
-    if principal.enabled and principal.mfa_state == "not_registered":
-        return Finding(
-            rule_id="R2",
-            severity="high",
-            subject=principal.name,
-            evidence=f"Account '{principal.name}' lacks enforced MFA registration.",
-            remediation=["Enforce MFA for the account.", "Rotate credentials if a breach is suspected."],
+            evidence=(
+                f"Account '{principal.name}' is disabled in directory and retains connected AI app assignments: "
+                f"{', '.join(app_names)}."
+            ),
+            remediation=[
+                "Review and remove the listed AI app assignments.",
+                "Revoke connected-app tokens or sessions where supported.",
+            ],
         )
     return None
 
@@ -137,12 +112,21 @@ def rule_high_privilege_app(
     return None
 
 
-def rule_high_privilege_grant(grant: PermissionGrant) -> Finding | None:
-    """Rule 5: delegated or application grant requesting sensitive scopes."""
+def rule_high_privilege_grant(
+    grant: PermissionGrant, catalog_entry: CatalogEntry | None
+) -> Finding | None:
+    """Rule 5: a catalog-matched AI app requests sensitive scopes."""
+    if (grant.app_display_name or "").strip().casefold() in SELF_APP_DISPLAY_NAMES:
+        return None
+    # Sensitive scopes are not proof that the client is an AI application.
+    # Keep all grants in the raw snapshot, but only emit the AI-specific risk
+    # finding when the client is recognized by the reviewed AI catalog.
+    if catalog_entry is None:
+        return None
     granted = {_normalize_scope(s) for s in grant.scope.split(" ") if s.strip()}
     hits = sorted(granted & HIGH_PRIVILEGE_SCOPES)
     if hits:
-        app_name = grant.app_display_name or f"app {grant.app_id[:8]}"
+        app_name = grant.app_display_name or f"Unknown app (Graph identifier {grant.app_id[:8]})"
         resource_name = grant.resource_display_name or grant.resource or "unknown resource"
         kind = "Application permission" if grant.grant_type == "application" else "Delegated grant"
         consent = f" ({grant.consent_type} consent)" if grant.consent_type else ""
@@ -164,9 +148,9 @@ def run_rules(snapshot: TenantSnapshot, apps: list[dict] | None = None) -> list[
     """Evaluate all rules over a snapshot. Pure; no I/O beyond catalog read."""
     findings: list[Finding] = []
     for p in snapshot.principals:
-        for f in (rule_stale_access(p), rule_mfa_gap(p)):
-            if f:
-                findings.append(f)
+        f = rule_stale_access(p, snapshot.app_assignments)
+        if f:
+            findings.append(f)
     for a in snapshot.app_assignments:
         catalog_entry = match_app(a.app_display_name, apps)
         f = rule_high_privilege_app(a, catalog_entry)
@@ -178,7 +162,8 @@ def run_rules(snapshot: TenantSnapshot, apps: list[dict] | None = None) -> list[
         if key in seen_grants:
             continue
         seen_grants.add(key)
-        f = rule_high_privilege_grant(g)
+        catalog_entry = match_app(g.app_display_name, apps)
+        f = rule_high_privilege_grant(g, catalog_entry)
         if f:
             findings.append(f)
     return findings

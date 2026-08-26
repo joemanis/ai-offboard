@@ -38,6 +38,9 @@ app.mount("/static", StaticFiles(directory=_STATIC_DIR), name="static")
 _state: dict = {"result": None, "mode": None}
 # Active device-code flows: {thread_id: {user_code, verification_uri, event, result}}
 _flows: dict = {}
+# Background scan jobs: {job_id: {status, progress, message, result, error}}
+_scan_jobs: dict[str, dict] = {}
+_scan_job_lock = threading.Lock()
 _flow_lock = threading.Lock()
 _web_remote_mode = False
 _web_token = ""
@@ -95,11 +98,32 @@ def _pre_seed_demo() -> None:
 # NOTE: _pre_seed_demo() is invoked AFTER _policy_view is defined (see below).
 
 
+def _device_auth_status(cfg, auth_state: dict) -> tuple[str, str]:
+    """Return a truthful device-login state for the landing page.
+
+    ``auth.json`` is only a routing hint. Silent authentication is the proof
+    that the cached refresh token is still usable.
+    """
+    if auth_state.get("mode") != "device_code":
+        return "none", ""
+    remembered_tenant = str(auth_state.get("tenant_id", ""))
+    if not cfg.public_client_id:
+        return "expired", remembered_tenant
+    try:
+        result = DeviceCodeAuth(client_id=cfg.public_client_id).authenticate(interactive=False)
+    except Exception:  # noqa: BLE001 - the UI needs a reconnect state, not a traceback
+        return "expired", remembered_tenant
+    return "connected", result.tenant_id or remembered_tenant
+
+
 def _connector_for(mock: bool):
     if mock:
         return MockConnector()
     cfg = load_config()
-    return build_connector(cfg, prefer_device_code=True)
+    # A web scan must never start a hidden device-code prompt in its worker
+    # thread. If the cached login is expired, report it through scan status so
+    # the browser can show a useful error and the user can reconnect.
+    return build_connector(cfg, prefer_device_code=True, allow_interactive=False)
 
 
 def _catalog_matches(snapshot) -> list[dict]:
@@ -143,6 +167,7 @@ _pre_seed_demo()
 async def index(request: Request):
     cfg = load_config()
     auth_state = load_auth_state()
+    auth_status, auth_tenant = _device_auth_status(cfg, auth_state)
     result = _state.get("result")
     demo_findings = len(result.findings) if result else 0
     demo_principals = len(result.snapshot.principals) if result else 0
@@ -156,8 +181,9 @@ async def index(request: Request):
             "configured": cfg.is_complete,
             "mode": _state["mode"],
             "tenant_id": cfg.tenant_id,
-            "auth_connected": auth_state.get("mode") == "device_code",
-            "auth_tenant": auth_state.get("tenant_id", ""),
+            "auth_status": auth_status,
+            "auth_connected": auth_status == "connected",
+            "auth_tenant": auth_tenant,
             "demo_findings": demo_findings,
             "demo_principals": demo_principals,
             "demo_apps": demo_apps_count,
@@ -290,6 +316,134 @@ async def auth_poll(flow_id: str = ""):
         return {"status": "pending", "user_code": flow["user_code"]}
 
 
+def _scan_progress(message: str) -> int:
+    """Translate connector stage messages into a user-facing percentage."""
+    text = message.lower()
+    if "resolved ai app assignments" in text:
+        try:
+            current, total = text.rsplit(" ", 1)[-1].rstrip("…").split("/")
+            return 45 + min(30, round(30 * int(current) / max(1, int(total))))
+        except (ValueError, ZeroDivisionError):
+            return 60
+    if "fetching users" in text:
+        return 15
+    if "fetching enterprise apps" in text:
+        return 45
+    if "delegated oauth" in text:
+        return 85
+    return 10
+
+
+def _scan_target(tenant_id: str, use_mock: bool, auth_state: dict, cfg) -> tuple[str, str | None]:
+    """Resolve and validate the tenant for a scan request."""
+    authenticated_tenant = auth_state.get("tenant_id", "")
+    if not use_mock and authenticated_tenant and tenant_id and tenant_id != authenticated_tenant:
+        return "", "The authenticated session is bound to a different tenant. Disconnect and sign in to the requested tenant."
+    tid = (tenant_id or "demo") if use_mock else (authenticated_tenant or tenant_id or cfg.tenant_id or "demo")
+    return tid, None
+
+
+def _report_context(request: Request, result, mode: str) -> dict:
+    policy_summary, policy_evals = _policy_view(result)
+    return {
+        "request": request,
+        "findings": result.findings,
+        "principal_count": len(result.snapshot.principals),
+        "app_count": result.snapshot.enterprise_app_count if result.snapshot.enterprise_app_count is not None else len(result.snapshot.app_assignments),
+        "assignment_count": len(result.snapshot.app_assignments),
+        "apps": _catalog_matches(result.snapshot),
+        "coverage": result.snapshot.coverage,
+        "coverage_notes": result.snapshot.coverage_notes,
+        "tenant_id": result.snapshot.tenant_id,
+        "scanned_at": result.snapshot.scanned_at,
+        "report_md": result.report_md,
+        "policy_summary": policy_summary,
+        "policy_evals": policy_evals,
+        "mode": mode,
+        "version": __version__,
+        "repo": _REPO,
+    }
+
+
+def _run_scan_job(job_id: str, tenant_id: str, use_mock: bool) -> None:
+    def update(message: str) -> None:
+        with _scan_job_lock:
+            job = _scan_jobs.get(job_id)
+            if job:
+                job["progress"] = _scan_progress(message)
+                job["message"] = message
+
+    try:
+        update("Starting scan…")
+        connector = _connector_for(use_mock)
+        result = run_scan(connector, tenant_id, progress_callback=update, save=True)
+        _state["result"] = result
+        _state["mode"] = "demo" if use_mock else "live"
+        _state["policy"] = _policy_view(result)
+        with _scan_job_lock:
+            _scan_jobs[job_id].update(
+                status="complete",
+                progress=100,
+                message="Audit complete",
+                result=result,
+            )
+    except Exception as exc:  # noqa: BLE001 - the UI needs the actual failure
+        with _scan_job_lock:
+            _scan_jobs[job_id].update(status="error", message="Scan failed", error=str(exc))
+
+
+@app.post("/scan/start")
+async def scan_start(tenant_id: str = Form(""), mock: str = Form("0")):
+    """Start a scan in the background so the UI can show live progress."""
+    use_mock = mock in ("1", "true", "on")
+    tid, error = _scan_target(tenant_id, use_mock, load_auth_state(), load_config())
+    if error:
+        return PlainTextResponse(error, status_code=400)
+    job_id = secrets.token_urlsafe(18)
+    with _scan_job_lock:
+        _scan_jobs[job_id] = {
+            "status": "running",
+            "progress": 3,
+            "message": "Starting scan…",
+            "result": None,
+        }
+    threading.Thread(target=_run_scan_job, args=(job_id, tid, use_mock), daemon=True).start()
+    return {"job_id": job_id}
+
+
+@app.get("/scan/status")
+async def scan_status(job_id: str = ""):
+    """Return progress for a background scan job."""
+    with _scan_job_lock:
+        job = _scan_jobs.get(job_id)
+        if job is None:
+            return {"status": "unknown", "error": "no such scan"}
+        response = {
+            "status": job["status"],
+            "progress": job["progress"],
+            "message": job["message"],
+        }
+        if job["status"] == "complete":
+            response["location"] = f"/scan/result?job_id={job_id}"
+        if job["status"] == "error":
+            response["error"] = job.get("error", "Scan failed")
+        return response
+
+
+@app.get("/scan/result", response_class=HTMLResponse)
+async def scan_result(request: Request, job_id: str = ""):
+    """Render a completed background scan."""
+    with _scan_job_lock:
+        job = _scan_jobs.get(job_id)
+        if job is None:
+            return PlainTextResponse("No such scan.", status_code=404)
+        if job["status"] != "complete":
+            return PlainTextResponse("Scan is not complete yet.", status_code=409)
+        result = job["result"]
+        mode = "demo" if result.snapshot.tenant_id == "demo" else "live"
+    return templates.TemplateResponse(request, "report.html", _report_context(request, result, mode))
+
+
 @app.post("/scan", response_class=HTMLResponse)
 async def scan(request: Request, tenant_id: str = Form(""), mock: str = Form("0")):
     use_mock = mock in ("1", "true", "on")
@@ -323,6 +477,7 @@ async def scan(request: Request, tenant_id: str = Form(""), mock: str = Form("0"
                 "assignment_count": len(result.snapshot.app_assignments),
                 "apps": _catalog_matches(result.snapshot),
                 "coverage": result.snapshot.coverage,
+                "coverage_notes": result.snapshot.coverage_notes,
                 "tenant_id": result.snapshot.tenant_id,
                 "scanned_at": result.snapshot.scanned_at,
                 "report_md": result.report_md,
@@ -335,6 +490,8 @@ async def scan(request: Request, tenant_id: str = Form(""), mock: str = Form("0"
         )
     except Exception as exc:  # noqa: BLE001 - surface scan/auth errors in the UI
         auth_state = load_auth_state()
+        error_cfg = load_config()
+        error_auth_status, error_auth_tenant = _device_auth_status(error_cfg, auth_state)
         return templates.TemplateResponse(
             request,
             "index.html",
@@ -343,8 +500,9 @@ async def scan(request: Request, tenant_id: str = Form(""), mock: str = Form("0"
                 "configured": load_config().is_complete,
                 "mode": _state["mode"],
                 "tenant_id": tenant_id or "",
-                "auth_connected": auth_state.get("mode") == "device_code",
-                "auth_tenant": auth_state.get("tenant_id", ""),
+                "auth_status": error_auth_status,
+                "auth_connected": error_auth_status == "connected",
+                "auth_tenant": error_auth_tenant,
                 "error": f"Scan failed: {exc}",
                 "version": __version__,
                 "repo": _REPO,

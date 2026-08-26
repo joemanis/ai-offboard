@@ -12,8 +12,8 @@ package metadata). Do **not** file a public issue for a real vulnerability.
 
 - The scan path performs **zero** mutating Microsoft Graph / Workspace calls.
   Only `GET` requests are issued.
-- The `plan` command produces a dry-run revocation plan and **never** applies
-  it.
+- The `plan` command produces a dry-run AI access cleanup plan and **never**
+  applies it.
 - The only write path is `offboard execute`, which is **opt-in**: it prints
   the full plan, requires typed confirmation (unless `--yes` for automation),
   and appends every mutation — success or failure — to a local audit log.

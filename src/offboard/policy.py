@@ -1,6 +1,6 @@
-"""Zero Trust policy engine (v3).
+"""AI access policy engine.
 
-Evaluates a declarative set of policies (YAML) against the audit inventory
+Evaluates declarative AI-access policies (YAML) against the audit inventory
 (TenantSnapshot + risk Findings). Each policy uses a *named* check with
 parameters — there is deliberately no `eval`/arbitrary expression support, so
 opening a policy file cannot execute code. This keeps "policy as code" safe to
@@ -94,24 +94,7 @@ def _check_stale_access(policy: Policy, snapshot: TenantSnapshot, findings: list
     related = [f for f in findings if f.rule_id == "R1"]
     if related:
         return PolicyEvaluation(policy, False, [f.evidence for f in related], [f.subject for f in related])
-    return PolicyEvaluation(policy, True, ["No stale or orphaned access detected."])
-
-
-def _check_mfa_enforced(policy: Policy, snapshot: TenantSnapshot, findings: list[Finding], params: dict[str, Any]) -> PolicyEvaluation:
-    related = [f for f in findings if f.rule_id == "R2"]
-    coverage = snapshot.coverage.get("mfa")
-    if coverage is None:
-        coverage = "assessed" if all(p.mfa_state is not None for p in snapshot.principals) else "not_assessed"
-    if coverage != "assessed":
-        return PolicyEvaluation(
-            policy,
-            False,
-            ["MFA registration telemetry was not collected; this policy is not assessed."],
-            status="not_assessed",
-        )
-    if related:
-        return PolicyEvaluation(policy, False, [f.evidence for f in related], [f.subject for f in related])
-    return PolicyEvaluation(policy, True, ["All assessed enabled principals have MFA registration."])
+    return PolicyEvaluation(policy, True, ["No disabled accounts retain connected AI app assignments."])
 
 
 def _check_no_high_privilege_apps(policy: Policy, snapshot: TenantSnapshot, findings: list[Finding], params: dict[str, Any]) -> PolicyEvaluation:
@@ -122,16 +105,28 @@ def _check_no_high_privilege_apps(policy: Policy, snapshot: TenantSnapshot, find
 
 
 def _check_no_broad_grants(policy: Policy, snapshot: TenantSnapshot, findings: list[Finding], params: dict[str, Any]) -> PolicyEvaluation:
-    related = [f for f in findings if f.rule_id == "R5"]
+    excluded = {
+        str(name).strip().casefold()
+        for name in params.get("excluded_apps", [])
+        if str(name).strip()
+    }
+    related = [
+        f
+        for f in findings
+        if f.rule_id == "R5" and f.subject.strip().casefold() not in excluded
+    ]
     if related:
         return PolicyEvaluation(policy, False, [f.evidence for f in related], [f.subject for f in related])
-    return PolicyEvaluation(policy, True, ["No OAuth grants request broad/sensitive scopes."])
+    if excluded and any(f.rule_id == "R5" and f.subject.strip().casefold() in excluded for f in findings):
+        return PolicyEvaluation(policy, True, ["No non-exempt catalog-matched AI OAuth grants request broad/sensitive scopes."])
+    return PolicyEvaluation(policy, True, ["No catalog-matched AI OAuth grants request broad/sensitive scopes."])
 
 
 def _check_unapproved_apps(policy: Policy, snapshot: TenantSnapshot, findings: list[Finding], params: dict[str, Any]) -> PolicyEvaluation:
     """Any catalog-matched app without an entry in `approved` (by name) is a policy breach.
 
-    This is the "allowlist / Zero Trust" core: nothing AI is trusted by default.
+    This is the approved-AI-app allowlist: unknown apps require review before
+    they remain connected.
     """
     approved = {str(a).lower() for a in params.get("approved", [])}
     breaches: list[str] = []
@@ -151,7 +146,6 @@ _Check = Callable[[Policy, TenantSnapshot, list[Finding], dict[str, Any]], Polic
 
 _registry: dict[str, _Check] = {
     "stale_access": _check_stale_access,
-    "mfa_enforced": _check_mfa_enforced,
     "no_high_privilege_apps": _check_no_high_privilege_apps,
     "no_broad_grants": _check_no_broad_grants,
     "unapproved_apps": _check_unapproved_apps,

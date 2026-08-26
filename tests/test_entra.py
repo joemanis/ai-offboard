@@ -3,6 +3,8 @@ from __future__ import annotations
 import threading
 from types import SimpleNamespace
 
+import requests
+
 from offboard.auth import AuthResult
 from offboard.connectors.entra import EntraConnector
 
@@ -96,8 +98,7 @@ def test_list_all_follows_odata_next_link(monkeypatch) -> None:
 
 def test_snapshot_attributes_delegated_and_application_grants(monkeypatch) -> None:
     connector = EntraConnector(SimpleNamespace(authenticate=lambda: SimpleNamespace(token="token")))
-    monkeypatch.setattr(connector, "_fetch_users", lambda: [{"id": "u1", "userPrincipalName": "u@example.com"}])
-    monkeypatch.setattr(connector, "_fetch_mfa_registration", lambda: [{"id": "u1", "isMfaRegistered": True}])
+    monkeypatch.setattr(connector, "_fetch_users", lambda **_kwargs: [{"id": "u1", "userPrincipalName": "u@example.com"}])
     service_principals = [
         {
             "id": "client-sp",
@@ -139,7 +140,6 @@ def test_snapshot_attributes_delegated_and_application_grants(monkeypatch) -> No
     snapshot = connector.snapshot("tenant-1")
 
     assert snapshot.enterprise_app_count == 2
-    assert snapshot.coverage["mfa"] == "assessed"
     assert snapshot.app_assignments[0].principal_id == "u1"
     assert len(snapshot.permission_grants) == 2
     delegated, application = snapshot.permission_grants
@@ -149,6 +149,34 @@ def test_snapshot_attributes_delegated_and_application_grants(monkeypatch) -> No
     assert application.grant_type == "application"
     assert application.resource_display_name == "Microsoft Graph"
     assert application.scope == "Mail.Read"
+
+
+def test_oauth_grant_client_id_resolves_service_principal_display_name() -> None:
+    """Graph clientId is the service-principal object ID, not the appId."""
+    service_principals = [
+        {
+            "id": "sp-client-26300ba6",
+            "appId": "app-registration-id",
+            "appDisplayName": "Example AI Assistant",
+        },
+        {
+            "id": "sp-graph",
+            "appId": "graph-app-id",
+            "appDisplayName": "Microsoft Graph",
+        },
+    ]
+    grants = [
+        {
+            "clientId": "sp-client-26300ba6",
+            "resourceId": "sp-graph",
+            "scope": "Mail.Read",
+        }
+    ]
+
+    mapped = EntraConnector._to_grants(grants, service_principals)
+
+    assert mapped[0].app_display_name == "Example AI Assistant"
+    assert mapped[0].resource_display_name == "Microsoft Graph"
 
 
 def test_ai_access_resolution_runs_catalog_apps_concurrently(monkeypatch) -> None:
@@ -172,3 +200,43 @@ def test_ai_access_resolution_runs_catalog_apps_concurrently(monkeypatch) -> Non
     assert set(assignments) == {"sp-0", "sp-1", "sp-2"}
     assert all(len(rows) == 1 for rows in assignments.values())
     assert permissions == {"sp-0": [], "sp-1": [], "sp-2": []}
+
+
+
+def test_core_user_fetch_omits_sign_in_activity(monkeypatch) -> None:
+    connector = EntraConnector(SimpleNamespace(authenticate=lambda: SimpleNamespace(token="token")))
+    seen: list[dict] = []
+
+    def fake_list_all(path: str, params: dict) -> list[dict]:
+        seen.append(params)
+        return [{"id": "u1", "userPrincipalName": "u@example.com"}]
+
+    monkeypatch.setattr(connector, "_list_all", fake_list_all)
+
+    connector._fetch_users()
+
+    assert "signInActivity" not in seen[0]["$select"]
+
+
+def test_signin_coverage_note_preserves_premium_license_error(monkeypatch) -> None:
+    connector = EntraConnector(SimpleNamespace(authenticate=lambda: SimpleNamespace(token="token")))
+    response = SimpleNamespace(
+        status_code=403,
+        json=lambda: {"error": {"code": "Authentication_RequestFromNonPremiumTenantOrB2CTenant"}},
+    )
+    error = requests.HTTPError(response=response)
+    calls = iter(("error", [{"id": "u1", "userPrincipalName": "u@example.com"}]))
+
+    def fake_list_all(*_args, **_kwargs):
+        value = next(calls)
+        if value == "error":
+            raise error
+        return value
+
+    monkeypatch.setattr(connector, "_list_all", fake_list_all)
+
+    rows = connector._fetch_users(sign_in_context=True)
+
+    assert rows == [{"id": "u1", "userPrincipalName": "u@example.com"}]
+    assert connector._signin_activity_unavailable
+    assert "premium licensing" in connector._signin_activity_unavailable_reason

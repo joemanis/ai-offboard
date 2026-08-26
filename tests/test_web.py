@@ -14,11 +14,85 @@ def test_landing_page_loads():
     assert resp.status_code == 200
     assert "ai-offboard" in resp.text.lower()
     # Polished landing: hero + stylesheet linked
-    assert "Audit your AI access" in resp.text
+    assert "Find unwanted AI access" in resp.text
     assert 'href="/static/style.css"' in resp.text
     # Pre-seeded demo sample report
     assert "pre-seeded demo" in resp.text
-    assert "Sample — AI Access Audit" in resp.text
+    assert "Sample — AI Access Report" in resp.text
+
+
+def test_landing_page_expired_device_login_offers_new_code(monkeypatch):
+    from offboard import web
+    from offboard.config import Config
+
+    class ExpiredAuth:
+        def __init__(self, client_id):
+            pass
+
+        def authenticate(self, interactive=False):
+            raise RuntimeError("cached login expired")
+
+    monkeypatch.setattr(web, "load_auth_state", lambda: {"mode": "device_code", "tenant_id": "old-tenant"})
+    monkeypatch.setattr(web, "load_config", lambda: Config("", "", "", public_client_id="public-client"))
+    monkeypatch.setattr(web, "DeviceCodeAuth", ExpiredAuth)
+
+    response = TestClient(app).get("/")
+
+    assert response.status_code == 200
+    assert "Microsoft sign-in needs attention" in response.text
+    assert "Generate new device code" in response.text
+    assert 'href="/auth/start"' in response.text
+    assert "Connected to tenant" not in response.text
+    assert "old-tenant" in response.text
+
+
+def test_landing_page_only_claims_connected_after_silent_validation(monkeypatch):
+    from offboard import web
+    from offboard.config import Config
+
+    class ValidAuth:
+        def __init__(self, client_id):
+            pass
+
+        def authenticate(self, interactive=False):
+            return AuthResult(token="token", tenant_id="validated-tenant")
+
+    monkeypatch.setattr(web, "load_auth_state", lambda: {"mode": "device_code", "tenant_id": "old-tenant"})
+    monkeypatch.setattr(web, "load_config", lambda: Config("", "", "", public_client_id="public-client"))
+    monkeypatch.setattr(web, "DeviceCodeAuth", ValidAuth)
+
+    response = TestClient(app).get("/")
+
+    assert response.status_code == 200
+    assert "Microsoft sign-in is valid for tenant" in response.text
+    assert "validated-tenant" in response.text
+    assert "old-tenant" not in response.text
+
+
+def test_auth_start_generates_device_code_page(monkeypatch):
+    from offboard import web
+    from offboard.config import Config
+
+    class FakeDeviceAuth:
+        def __init__(self, client_id):
+            pass
+
+        def begin_web_flow(self):
+            return {"user_code": "NEW-CODE", "verification_uri": "https://login.example/device"}
+
+        def finish_web_flow(self):
+            raise RuntimeError("test flow stopped")
+
+    monkeypatch.setattr(web, "load_config", lambda: Config("", "", "", public_client_id="public-client"))
+    monkeypatch.setattr(web, "DeviceCodeAuth", FakeDeviceAuth)
+    monkeypatch.setattr(web, "save_auth_state", lambda tenant_id, mode: None)
+
+    response = TestClient(app).get("/auth/start")
+
+    assert response.status_code == 200
+    assert "NEW-CODE" in response.text
+    assert "https://login.example/device" in response.text
+    assert "Waiting for sign-in" in response.text
 
 
 def test_demo_scan_renders_findings():
@@ -26,9 +100,9 @@ def test_demo_scan_renders_findings():
     resp = client.post("/scan", data={"tenant_id": "demo", "mock": "1"})
     assert resp.status_code == 200
     text = resp.text.lower()
-    assert "ai access audit" in text
+    assert "ai access report" in text
     assert "microsoft 365 copilot" in text
-    assert "stale@example.com" in text
+    assert "disabled@example.com" in text
 
 
 def test_demo_scan_renders_remediation_and_apps():
@@ -57,8 +131,8 @@ def test_landing_page_shows_policy_compliance_card():
     resp = client.get("/")
     assert resp.status_code == 200
     # Pre-seeded demo evaluates the bundled policies
-    assert "Zero Trust policy compliance" in resp.text
-    assert "ZT-001" in resp.text
+    assert "AI access policy compliance" in resp.text
+    assert "AI-001" in resp.text
     assert "PASS" in resp.text or "FAIL" in resp.text
     assert "passing" in resp.text
 
@@ -68,8 +142,8 @@ def test_report_page_shows_policy_section():
     resp = client.post("/scan", data={"tenant_id": "demo", "mock": "1"})
     assert resp.status_code == 200
     text = resp.text
-    assert "Zero Trust policy compliance" in text
-    assert "ZT-005" in text  # the default-deny allowlist policy
+    assert "AI access policy compliance" in text
+    assert "AI-004" in text  # the approved-app policy
     assert "policy check" in text
 
 
@@ -177,6 +251,62 @@ def test_live_scan_uses_saved_tenant_and_persists(monkeypatch):
     assert response.status_code == 200
     assert seen == {"tenant_id": "tenant-live", "save": True}
     assert "tenant-live" in response.text
+
+
+def test_web_live_connector_disables_hidden_interactive_login(monkeypatch):
+    from offboard import web
+
+    captured = {}
+
+    def fake_build_connector(cfg, **kwargs):
+        captured.update(kwargs)
+        return object()
+
+    monkeypatch.setattr(web, "build_connector", fake_build_connector)
+    monkeypatch.setattr(web, "load_config", lambda: object())
+
+    web._connector_for(False)
+
+    assert captured == {"prefer_device_code": True, "allow_interactive": False}
+
+
+def test_scan_start_reports_progress_and_redirects_to_result(monkeypatch):
+    from offboard import web
+    from offboard.scan import run_scan as real_run_scan
+
+    def fake_run_scan(connector, tenant_id, progress_callback=None, save=False):
+        if progress_callback:
+            progress_callback("Fetching users…")
+            progress_callback("Fetching enterprise apps…")
+            progress_callback("Fetching delegated OAuth grants…")
+        return real_run_scan(connector, tenant_id, save=False)
+
+    monkeypatch.setattr(web, "run_scan", fake_run_scan)
+    client = TestClient(app)
+    started = client.post("/scan/start", data={"tenant_id": "demo", "mock": "1"})
+    assert started.status_code == 200
+    job_id = started.json()["job_id"]
+
+    for _ in range(20):
+        status = client.get(f"/scan/status?job_id={job_id}").json()
+        if status["status"] == "complete":
+            break
+        threading.Event().wait(0.01)
+    assert status["status"] == "complete"
+    assert status["progress"] == 100
+    assert status["location"].endswith(job_id)
+
+    report = client.get(status["location"])
+    assert report.status_code == 200
+    assert "AI Access Report" in report.text
+
+
+def test_landing_page_contains_scan_progress_controls():
+    response = TestClient(app).get("/")
+    assert response.status_code == 200
+    assert 'id="scan-progress"' in response.text
+    assert 'role="progressbar"' in response.text
+    assert "startScan(event, this)" in response.text
 
 
 def test_remote_web_requires_operator_login(monkeypatch):

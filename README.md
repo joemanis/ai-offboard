@@ -6,14 +6,13 @@
 [![License](https://img.shields.io/github/license/joemanis/ai-offboard)](LICENSE)
 [![GitHub release](https://img.shields.io/github/v/release/joemanis/ai-offboard)](https://github.com/joemanis/ai-offboard/releases)
 
-**The AI tool audit + offboarding report you hand your insurance agent.**
+**Find unwanted AI access. Clean it up with proof.**
 
-SMBs and MSPs have a loud, unfilled problem: no one can catalog the AI tools
-running in a tenant, see what data they touch, or prove on departure that
-access was revoked. Enterprise DLP vendors chase the big-org blocking market
-and skip the small-org audit-and-revoke-at-departure moment. `ai-offboard`
-closes that gap with a **read-only-first** scanner that produces the compliance
-artifact an insurer, SOC2, or renewal actually accepts.
+SMBs and MSPs need a reliable inventory of the AI applications connected to a
+tenant, the data those applications can reach, and proof that unwanted access
+was removed. `ai-offboard` focuses on that tenant-side cleanup workflow with a
+**read-only-first** scanner, an approval-gated remediation path, and a
+before-and-after evidence artifact.
 
 > **Read-only by default.** The scanner never writes: it audits and reports,
 > and its plan is a dry-run checklist for a human to approve. Remediation
@@ -28,9 +27,10 @@ artifact an insurer, SOC2, or renewal actually accepts.
   role scopes, and DLP-risk tiers
 - Attributes delegated and application OAuth permissions to readable client and
   resource applications where Graph provides that evidence
-- Flags risky access: stale access, confirmed MFA-registration gaps, unused
-  high-tier seats, and broad OAuth grants; missing telemetry is marked not assessed
-- Emits a **dry-run revocation plan** (execute nothing)
+- Flags risky tenant-side AI access: disabled-account assignments, high-tier app
+  access, unknown or unapproved apps, and broad OAuth grants from catalog-matched
+  AI applications
+- Emits a **dry-run AI access cleanup plan** (execute nothing)
 - Renders a plain-English **audit report** (.md + .html) an auditor can read
 
 ## Quick start
@@ -81,14 +81,14 @@ For automation, still supports client credentials via an Azure App Registration:
 offboard setup                          # guides through App Registration + writes .env
 offboard audit --tenant <id>            # scan to terminal
 offboard audit --tenant <id> --report   # write report.md + report.html
-offboard plan --user <upn>              # dry-run revocation steps (executes nothing)
+offboard plan --user <upn>              # dry-run AI access cleanup plan (executes nothing)
 ```
 
-## Zero Trust policy engine (v3)
+## AI access policy engine
 
-Turn the inventory into enforceable policy. Policies are declarative YAML
+Turn the inventory into AI-access cleanup policy. Policies are declarative YAML
 using **named checks only** (no arbitrary expressions, so opening a policy
-file never executes code). The bundled baseline ships five policies:
+file never executes code). The bundled baseline ships four AI-access policies:
 
 ```bash
 offboard policy list            # see checks + bundled policies
@@ -97,11 +97,14 @@ offboard policy check --json    # machine-readable compliance report
 ```
 
 Bundled policies:
-- **ZT-001** No stale or orphaned access
-- **ZT-002** MFA enforced on all principals
-- **ZT-003** No high-privilege AI app assignments
-- **ZT-004** No broad OAuth grants
-- **ZT-005** Approved AI-app allowlist (default-deny Zero Trust)
+- **AI-001** No disabled-account AI access
+- **AI-002** No high-privilege AI app assignments
+- **AI-003** No broad AI OAuth grants
+- **AI-004** Approved AI-app allowlist
+
+Sign-in activity is optional context. It is not collected by default and does not
+affect core AI-access findings. Use `offboard audit --sign-in-context` only when
+that enrichment is useful and licensed.
 
 Bring your own policies: drop a `.yml` file into `offboard/policies/default/`
 (or pass a path to the loader) with the same `policies:` structure.
@@ -116,7 +119,7 @@ explicit approval gate. Every mutation is appended to the local audit log:
 ```bash
 offboard plan --tenant <id>       # review what will change (read-only)
 offboard execute --tenant <id>    # approve each step, then it applies:
-                                  #   block sign-in, revoke tokens, remove app assignment
+                                  #   remove assignments, revoke tokens, disable accounts where approved
 ```
 
 Use `--yes` to skip the interactive confirmation (CI/automation), and
@@ -175,7 +178,9 @@ offboard audit --workspace       # reads users + their OAuth-connected AI apps
 ```
 
 The Workspace connector maps each user's granted third-party apps (ChatGPT,
-Fireflies, Zapier, …) into the same risk rules as the Entra connector.
+Fireflies, Zapier, …) into the same AI-access rules as the Entra connector.
+The scanner reports tenant-side connected or authorized applications. It does
+not claim to find every desktop application, browser extension, or personal SaaS account.
 
 ## Screenshots
 
@@ -196,7 +201,7 @@ Run `offboard audit --tenant demo --mock` (or the web UI) to see a live report.
 A representative report renders like this:
 
 ```markdown
-# AI-Offboard Audit Report
+# AI-Offboard AI Access Report
 
 - **Tenant:** demo
 - **Principals scanned:** 3
@@ -204,8 +209,7 @@ A representative report renders like this:
 
 | Severity | Rule | Subject | Evidence |
 | --- | --- | --- | --- |
-| medium | R1 | stale@example.com | Account is disabled in directory. |
-| high   | R2 | nomfa@example.com | Account lacks enforced MFA registration. |
+| medium | R1 | disabled@example.com | Disabled account may retain connected AI access. |
 | high   | R4 | Microsoft 365 Copilot | High-privilege app has an active assignment. |
 ```
 
@@ -215,12 +219,12 @@ A representative report renders like this:
   tenant ID needed) or client credentials (CI/service accounts via App Registration).
 - **Read-only** Microsoft Entra ID connector (Graph, GET-only)
 - AI-app catalog (`apps.json`) with DLP-risk tiers
-- Risk rules → findings (stale access, MFA gaps, unused high-tier seats, broad grants)
-- Dry-run revocation plan + audit report (MD + HTML)
+- Risk rules → findings (disabled-account access, high-tier assignments, unknown apps, broad grants from catalog-matched AI apps)
+- Dry-run AI access cleanup plan + audit report (MD + HTML)
 - Local web UI (`offboard web`) with "Connect Microsoft 365" flow
 - Mock/demo mode (`--mock`) so anyone can evaluate with zero creds
 
-**Not in v1:** write/execute revocation, Google Workspace connector, DB,
+**Not in v1:** write/execute cleanup, Google Workspace connector, DB,
 multi-tenant SaaS. See [SPEC.md](SPEC.md) for the roadmap.
 
 ## Install

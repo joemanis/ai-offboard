@@ -14,7 +14,7 @@ from .risk import Finding
 
 def render_markdown(snapshot: TenantSnapshot, findings: list[Finding]) -> str:
     lines = [
-        "# AI-Offboard Audit Report",
+        "# AI-Offboard AI Access Report",
         "",
         f"- **Tenant:** {snapshot.tenant_id}",
         f"- **Scanned at:** {snapshot.scanned_at}",
@@ -27,9 +27,14 @@ def render_markdown(snapshot: TenantSnapshot, findings: list[Finding]) -> str:
         lines.extend(
             [
                 "",
-                "## Data coverage",
+                "## Evidence coverage",
                 "",
                 *[f"- **{name.replace('_', ' ').title()}:** {state}" for name, state in sorted(snapshot.coverage.items())],
+                *[
+                    f"  - **Note:** {snapshot.coverage_notes[name]}"
+                    for name in sorted(snapshot.coverage_notes)
+                    if name in snapshot.coverage
+                ],
             ]
         )
     if not findings:

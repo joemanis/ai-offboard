@@ -1,10 +1,10 @@
 {% extends "base.html" %}
-{% block title %}Audit report — ai-offboard{% endblock %}
+{% block title %}AI access report — ai-offboard{% endblock %}
 
 {% block content %}
   <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:14px; flex-wrap:wrap; margin-bottom:6px;">
     <div>
-      <h1 style="margin:0 0 6px; font-size:24px; letter-spacing:-0.2px;">AI Access Audit</h1>
+      <h1 style="margin:0 0 6px; font-size:24px; letter-spacing:-0.2px;">AI Access Report</h1>
       <p class="note" style="margin:0">Tenant <code>{{ tenant_id }}</code></p>
     </div>
     {% if mode %}
@@ -43,14 +43,21 @@
   </div>
 
   <div class="card">
-    <h2>Data coverage</h2>
-    <p class="sub">A green finding count is only as trustworthy as the telemetry behind it.</p>
+    <h2>Evidence coverage</h2>
+    <p class="sub">The report only makes claims about AI access the connector actually observed.</p>
     {% if coverage %}
       <div class="chips">
         {% for name, state in coverage.items() %}
           <span class="chip {{ 'high' if state == 'not_assessed' else '' }}">{{ name.replace('_', ' ') }}<small>{{ state }}</small></span>
         {% endfor %}
       </div>
+      {% if coverage_notes %}
+        <div class="coverage-notes">
+          {% for name, note in coverage_notes.items() %}
+            <p><strong>{{ name.replace('_', ' ') }}:</strong> {{ note }}</p>
+          {% endfor %}
+        </div>
+      {% endif %}
     {% else %}
       <p class="empty">Coverage metadata was not recorded for this scan.</p>
     {% endif %}
@@ -102,8 +109,8 @@
   </div>
 
   <div class="card">
-      <h2>Zero Trust policy compliance</h2>
-      <p class="sub">Policies evaluated against this scan. See <code>offboard policy check</code> for the CLI view.</p>
+      <h2>AI access policy compliance</h2>
+      <p class="sub">Policies evaluated against connected AI applications and their tenant access. See <code>offboard policy check</code> for the CLI view.</p>
       {% if policy_evals %}
         <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:12px">
           <span style="font-size:0.85rem; font-weight:600; padding:4px 12px; border-radius:99px; background:{{ '#123524' if policy_summary.overall == 'PASS' else '#3a2418' }}; color:{{ '#4ade80' if policy_summary.overall == 'PASS' else '#fb923c' }}">

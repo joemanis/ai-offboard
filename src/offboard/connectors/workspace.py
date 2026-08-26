@@ -81,14 +81,13 @@ class WorkspaceConnector(Connector):
 
     # -- mapping to domain types --------------------------------------------
 
-    def _to_principal(self, raw: dict) -> Principal:
+    def _to_principal(self, raw: dict, sign_in_context: bool = False) -> Principal:
         return Principal(
             id=raw.get("id", ""),
             name=raw.get("primaryEmail", raw.get("name", {}).get("fullName", "unknown")),
             type="user",
             enabled=not bool(raw.get("suspended", False)),
-            sign_in_last_seen=(raw.get("lastLoginTime") or raw.get("creationTime") or None),
-            mfa_state="enforced" if raw.get("isEnforcedIn2Sv") else ("enrolled" if raw.get("isEnrolledIn2Sv") else None),
+            sign_in_last_seen=(raw.get("lastLoginTime") or raw.get("creationTime") or None) if sign_in_context else None,
         )
 
     def _to_assignment_and_grant(self, user: Principal, token_raw: dict) -> tuple[AppAssignment, PermissionGrant] | None:
@@ -107,6 +106,10 @@ class WorkspaceConnector(Connector):
             resource="google",
             scope=" ".join(scopes) if isinstance(scopes, list) else str(scopes),
             grant_type="delegated",
+            app_display_name=display,
+            resource_display_name="Google Workspace",
+            principal_id=user.id,
+            principal_display_name=user.name,
         )
         return assignment, grant
 
@@ -116,6 +119,7 @@ class WorkspaceConnector(Connector):
         self,
         tenant_id: str,
         progress_callback: Callable[[str], None] | None = None,
+        sign_in_context: bool = False,
     ) -> TenantSnapshot:
         """Fetch users + their OAuth tokens and map to a TenantSnapshot."""
         from datetime import UTC, datetime
@@ -128,7 +132,7 @@ class WorkspaceConnector(Connector):
         assignments: list[AppAssignment] = []
         grants: list[PermissionGrant] = []
         for idx, raw_user in enumerate(users_raw):
-            user = self._to_principal(raw_user)
+            user = self._to_principal(raw_user, sign_in_context=sign_in_context)
             principals.append(user)
             if idx % 50 == 0 and len(users_raw) > 50 and progress_callback:
                 progress_callback(f"Grants for {idx}/{len(users_raw)} users…")

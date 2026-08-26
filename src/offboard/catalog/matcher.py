@@ -25,14 +25,18 @@ def load_catalog(path: Path = _CATALOG_PATH) -> list[dict[str, Any]]:
         return json.load(fh).get("apps", [])
 
 
-def match_app(name: str, apps: list[dict[str, Any]] | None = None) -> CatalogEntry | None:
+def match_app(name: str | None, apps: list[dict[str, Any]] | None = None) -> CatalogEntry | None:
     """Return the best matched catalog entry for a principal/app name.
 
     Matches if any `matches` substring appears case-insensitively in `name`.
+    Graph may explicitly return null for optional display-name fields, so a
+    missing name is simply an unmatched app rather than a scan failure.
     Scoring: longest (most specific) substring match wins, with DLP tier as
     tiebreaker. This prevents e.g. "GitHub Copilot" from being swallowed by
     the generic "copilot" entry.
     """
+    if not name:
+        return None
     apps = apps if apps is not None else load_catalog()
     best: dict[str, Any] | None = None
     best_len = 0

@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+Focused AI access cleanup scope.
+
+### Changed
+- Removed general sign-in posture from the default scan, risk rules, policy bundle, and progress stages.
+- Added opt-in `offboard audit --sign-in-context` enrichment for tenants that explicitly need sign-in activity.
+- Renamed the default policy bundle from generic Zero Trust checks to four AI access policies (`AI-001` through `AI-004`).
+- Reworked the UI, reports, README, spec, connector guide, catalog notes, and sample reports around tenant-side connected, authorized, and provisioned AI applications.
+- Updated dry-run remediation steps to prioritize removing AI assignments and connected-app access, with before/after verification as the next cleanup milestone.
+- Documented that broad OAuth scopes are evaluated as `AI-003` only when the client matches the reviewed AI catalog; non-AI and unknown grants remain in raw inventory without creating AI findings.
+
 ## 0.4.2 (2026-08-18)
 
 Noninteractive audit reliability patch.
@@ -43,7 +55,7 @@ Trustworthy Entra inventory and safer operator workflows.
 - Real Graph `appRoleAssignedTo` discovery for catalog-matched AI applications, including assigned principal and role attribution.
 - Enterprise-app inventory counts are separated from actual app-role assignments.
 - Delegated OAuth grants and application permissions now include client/resource names, consent type, and grant type where Graph provides them.
-- MFA registration coverage states and explicit `NOT_ASSESSED` policy results when reports telemetry is unavailable.
+- Telemetry coverage states and explicit `NOT_ASSESSED` policy results when reports telemetry is unavailable.
 - Remote web mode with explicit host opt-in, operator token, SameSite session cookie, cross-origin state-change protection, and POST-only logout.
 - MSP guard preventing `audit --all` from reusing an interactive device-code session across tenants.
 - Graph payload contract tests and a cross-platform built-wheel smoke-test matrix.
@@ -81,7 +93,7 @@ Initial release — read-only Microsoft 365 AI tool audit and offboarding report
 - **Connector:** Microsoft Entra ID (Graph) read-only scanner via MSAL client credentials.
 - **Mock connector:** deterministic demo snapshot — `offboard audit --mock` works with zero Azure setup.
 - **AI-app catalog** (JSON) with DLP-risk tiers; substring matcher for fast community contributions.
-- **Risk rules:** R1 stale/unused accounts, R2 MFA gap, R4 high-privilege app.
+- **Risk rules:** R1 disabled-account access, R4 high-privilege app, R5 broad OAuth grant.
 - **Dry-run revocation planner** — typed revoke steps, provably executes nothing.
 - **Audit report** — Markdown + HTML output with findings table and remediation steps.
 - **JSON output** — `offboard audit --json` for machine consumption.

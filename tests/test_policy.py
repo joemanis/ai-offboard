@@ -8,14 +8,14 @@ from offboard.connectors.mock import MockConnector
 
 def test_default_policies_load():
     policies = policy.load_policies()
-    assert len(policies) >= 5
+    assert len(policies) == 4
     ids = {p.id for p in policies}
-    assert "ZT-001" in ids and "ZT-005" in ids
+    assert ids == {"AI-001", "AI-002", "AI-003", "AI-004"}
 
 
 def test_registry_has_named_checks_only():
     checks = policy.list_checks()
-    assert set(checks) >= {"stale_access", "mfa_enforced", "no_high_privilege_apps", "no_broad_grants", "unapproved_apps"}
+    assert set(checks) >= {"stale_access", "no_high_privilege_apps", "no_broad_grants", "unapproved_apps"}
 
 
 def test_demo_tenant_fails_all():
@@ -25,20 +25,16 @@ def test_demo_tenant_fails_all():
     summary = policy.summarize(results)
     assert summary["overall"] == "FAIL"
     assert summary["violations"] == 4
-    assert summary["not_assessed"] == 1
-    assert summary["by_severity"]["critical"] == 1  # ZT-005 allowlist
+    assert summary["not_assessed"] == 0
+    assert summary["by_severity"]["critical"] == 1  # AI-004 allowlist
 
 
 def test_clean_tenant_passes():
-    """A tenant with no stale access, enforced MFA, no broad grants, and no
-    AI app assignments should PASS every bundled policy (the allowlist is
-    default-deny, so a tenant with zero assigned apps is fully compliant)."""
+    """A tenant with no disabled accounts, no broad grants, and no AI app assignments passes."""
     snap = TenantSnapshot(
         tenant_id="clean",
         scanned_at="2026-08-01T00:00:00Z",
-        principals=[
-            Principal(id="p1", name="alice@clean.test", type="user", enabled=True, mfa_state="enforced"),
-        ],
+        principals=[Principal(id="p1", name="alice@clean.test", type="user", enabled=True)],
         permission_grants=[
             PermissionGrant(app_id="a1", resource="graph", scope="user.read", grant_type="delegated"),
         ],
@@ -49,17 +45,93 @@ def test_clean_tenant_passes():
     assert summary["violations"] == 0
 
 
-def test_unapproved_app_fails_allowlist(tmp_path):
-    """ZT-005 is a default-deny: an app not on the approved list fails even
-    if it's otherwise low-risk."""
+def test_ai003_excludes_ai_offboard_but_not_other_broad_grants():
+    """The scanner's own required grant is absent from findings, while customer apps still fail."""
     snap = TenantSnapshot(
         tenant_id="t",
         scanned_at="2026-08-01T00:00:00Z",
-        principals=[Principal(id="p1", name="u@t.test", type="user", enabled=True, mfa_state="enforced")],
+        permission_grants=[
+            PermissionGrant(
+                app_id="self-client",
+                app_display_name="ai-offboard",
+                resource="https://graph.microsoft.com",
+                scope="Mail.Read Files.Read.All",
+                grant_type="delegated",
+            ),
+            PermissionGrant(
+                app_id="other-client",
+                app_display_name="ChatGPT Enterprise",
+                resource="https://graph.microsoft.com",
+                scope="Mail.Read Files.Read.All",
+                grant_type="delegated",
+            ),
+        ],
+    )
+
+    findings = run_rules(snap)
+    assert [finding.subject for finding in findings if finding.rule_id == "R5"] == ["ChatGPT Enterprise"]
+    ai003 = next(result for result in policy.evaluate(snap, findings) if result.policy.id == "AI-003")
+
+    assert ai003.compliant is False
+    assert ai003.subjects == ["ChatGPT Enterprise"]
+    assert "ai-offboard" not in " ".join(ai003.subjects)
+
+
+def test_ai003_passes_with_only_ai_offboard_broad_grant():
+    snap = TenantSnapshot(
+        tenant_id="t",
+        scanned_at="2026-08-01T00:00:00Z",
+        permission_grants=[
+            PermissionGrant(
+                app_id="self-client",
+                app_display_name="AI-Offboard",
+                resource="https://graph.microsoft.com",
+                scope="Mail.Read Files.Read.All",
+                grant_type="delegated",
+            ),
+        ],
+    )
+
+    findings = run_rules(snap)
+    ai003 = next(result for result in policy.evaluate(snap, findings) if result.policy.id == "AI-003")
+
+    assert ai003.compliant is True
+    assert not any(finding.rule_id == "R5" for finding in findings)
+
+
+def test_ai003_ignores_non_ai_business_grant():
+    snap = TenantSnapshot(
+        tenant_id="t",
+        scanned_at="2026-08-01T00:00:00Z",
+        permission_grants=[
+            PermissionGrant(
+                app_id="business-client",
+                app_display_name="SharePoint Online Web Client Extensibility",
+                resource="https://graph.microsoft.com",
+                scope="Mail.Read Files.Read.All",
+                grant_type="delegated",
+            ),
+        ],
+    )
+
+    findings = run_rules(snap)
+    ai003 = next(result for result in policy.evaluate(snap, findings) if result.policy.id == "AI-003")
+
+    assert ai003.compliant is True
+    assert not any(finding.rule_id == "R5" for finding in findings)
+
+
+def test_unapproved_app_fails_allowlist(tmp_path):
+    # AI-004 is a default-deny allowlist: an app not on the approved list fails even
+    # if it's otherwise low-risk.
+    snap = TenantSnapshot(
+        tenant_id="t",
+        scanned_at="2026-08-01T00:00:00Z",
+        principals=[Principal(id="p1", name="u@t.test", type="user", enabled=True)],
         app_assignments=[AppAssignment(principal_id="p1", app_display_name="Fireflies.ai")],
     )
     results = policy.evaluate(snap)
-    allowlist = [r for r in results if r.policy.id == "ZT-005"]
+    allowlist = [r for r in results if r.policy.id == "AI-004"]
     assert len(allowlist) == 1
     assert allowlist[0].compliant is False
     assert "Fireflies.ai" in allowlist[0].subjects

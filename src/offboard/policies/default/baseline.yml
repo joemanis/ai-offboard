@@ -1,52 +1,44 @@
-# Zero Trust for AI — default baseline policy set.
+# AI access cleanup baseline policy set.
 #
-# Policies here express the "audit artifact you hand your insurance agent"
-# as enforceable, declarative statements. They are evaluated at scan time and
-# in `offboard policy check`. Each uses a NAMED check from the policy registry
-# (no arbitrary expressions — opening this file can never execute code).
-#
-# Contribute a new policy as a one-file PR against this directory.
+# These policies evaluate tenant-side AI access discovered by the scanner.
+# Sign-in activity is optional context and is not part of core policy evaluation.
 policies:
-  - id: ZT-001
-    name: No stale or orphaned access
-    description: All accounts must have recent sign-in activity; disabled or 90+ day stale accounts are revoked.
+  - id: AI-001
+    name: No disabled-account AI access
+    description: Disabled accounts must not retain connected AI app assignments.
     severity: high
     check: stale_access
     applies_to: all
     default: true
 
-  - id: ZT-002
-    name: MFA enforced on all principals
-    description: Every enabled account must have enforced multi-factor authentication.
-    severity: high
-    check: mfa_enforced
-    applies_to: all
-    default: true
-
-  - id: ZT-003
+  - id: AI-002
     name: No high-privilege AI app assignments
-    description: No service principal / app assignment may be to a high-DLP-tier AI app.
+    description: High-DLP-tier AI apps require explicit review before access remains assigned.
     severity: high
     check: no_high_privilege_apps
     applies_to: all
     default: true
 
-  - id: ZT-004
-    name: No broad OAuth grants
-    description: No delegated grant may request broad or sensitive scopes (Mail, Files, Directory).
+  - id: AI-003
+    name: No broad AI OAuth grants
+    description: AI-connected apps must not retain broad or sensitive Mail, Files, Directory, or Drive scopes without review.
     severity: high
     check: no_broad_grants
     applies_to: all
     default: true
+    params:
+      # ai-offboard must use broad read-only Graph access to inventory the
+      # tenant. Keep this exact-name exclusion narrow and visible in policy.
+      excluded_apps:
+        - ai-offboard
 
-  - id: ZT-005
-    name: Approved AI-app allowlist (Zero Trust)
-    description: No AI app may be assigned unless it is on the business-approved allowlist. Default deny.
+  - id: AI-004
+    name: Approved AI-app allowlist
+    description: Connected AI apps must be on the business-approved allowlist. Unknown apps require review before remaining connected.
     severity: critical
     check: unapproved_apps
     applies_to: all
     default: true
     params:
       approved:
-        # Add approved app catalog names here to exempt them from the allowlist.
         - Microsoft 365 Copilot

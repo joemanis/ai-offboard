@@ -10,8 +10,7 @@ it only ever issues `GET` requests. This guide covers setup for both.
 
 Follow these steps once per tenant you scan.
 
-> **Security note:** v1 performs no writes. Grant only the scopes below.
-> Do not add `Mail.ReadWrite`, `Files.ReadWrite`, or any `*.All` write scope.
+> **Security note:** scans are read-only. Grant only the scopes needed to inventory AI applications, assignments, and permissions. Do not add `Mail.ReadWrite`, `Files.ReadWrite`, or any write scope.
 
 ### Option A — interactive device-code login (recommended, no App Registration)
 
@@ -39,14 +38,12 @@ flows (default in the Microsoft Entra admin center for most tenants).
    - `User.Read.All`
    - `Group.Read.All`
    - `Application.Read.All`
-   - `AuditLog.Read.All` (optional sign-in activity enrichment)
-   - `Reports.Read.All` (MFA registration posture)
+   Optional sign-in context permission, only when explicitly requested with `offboard audit --sign-in-context`:
+   - `AuditLog.Read.All` (sign-in enrichment; Microsoft Entra ID P1 or P2 is required)
 
-   The scanner uses `appRoleAssignedTo` to resolve actual user/group/service-principal
-   assignments for catalog-matched AI applications. A service principal appearing
-   in the inventory is not itself treated as an assignment. If the optional audit
-   or reports permissions are not consented, the report marks that data as
-   **not assessed** instead of claiming a clean result.
+   The core scan does not request these telemetry fields and does not require Entra premium licensing. It uses `appRoleAssignedTo` to resolve actual user/group/service-principal assignments for catalog-matched AI applications. A service principal appearing in the inventory is not itself treated as an assignment.
+
+   The scanner finds tenant-side connected, authorized, and provisioned applications. It does not claim to discover every desktop app, browser extension, or personal SaaS account.
 
    **Do not grant `Directory.ReadWrite.All` or any write scope.**
 6. Copy the **Application (client) ID** and **Tenant ID**.
@@ -105,7 +102,7 @@ export GOOGLE_ACCESS_TOKEN=ya29...
 offboard audit --workspace
 ```
 
-All existing outputs work: `--report`, `--json`, `--csv`, and the web UI.
+All existing outputs work: `--report`, `--json`, `--csv`, and the web UI. Add `--sign-in-context` only when optional sign-in enrichment is needed.
 
 ### Scope note
 

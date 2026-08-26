@@ -4,7 +4,7 @@ Commands:
   setup   one-time interactive connector setup (writes .env)
   auth    manage interactive device-code authentication (login / status / logout)
   audit   scan a tenant and emit a report (terminal summary + optional file)
-  plan    dry-run revocation plan (executes nothing)
+  plan    dry-run AI access cleanup plan (executes nothing)
   doctor  pre-flight health check
   web     local web UI
 """
@@ -381,8 +381,9 @@ def audit(
     csv_output: Annotated[bool, typer.Option("--csv", help="Write findings to CSV (MSP tooling friendly)")] = False,
     audit_all: Annotated[bool, typer.Option("--all", help="Scan every registered tenant (MSP mode)")] = False,
     workspace: Annotated[bool, typer.Option("--workspace", help="Scan a Google Workspace tenant instead of Entra")] = False,
+    sign_in_context: Annotated[bool, typer.Option("--sign-in-context", help="Collect optional sign-in activity; not used by core AI-access findings")] = False,
 ) -> None:
-    """Scan a tenant (read-only) and produce an audit report."""
+    """Scan a tenant for connected AI access and produce an audit report."""
     _load_env()
     cfg = load_config()
     if workspace:
@@ -391,7 +392,7 @@ def audit(
         ws_connector = build_workspace_connector(cfg)
         tid = tenant_id or "workspace"
         typer.secho("Scanning Google Workspace…", fg=typer.colors.CYAN)
-        result = run_scan(ws_connector, tid, save=True)
+        result = run_scan(ws_connector, tid, save=True, sign_in_context=sign_in_context)
         typer.secho("[done]", fg=typer.colors.GREEN)
         _emit_audit_output(result, json_output, csv_output, report, out_dir, bundle)
         return
@@ -426,7 +427,7 @@ def audit(
         for t in tenants:
             try:
                 connector = _pick_connector(False, cfg, prefer_device_code=False)
-                result = run_scan(connector, t["tenant_id"], save=True)
+                result = run_scan(connector, t["tenant_id"], save=True, sign_in_context=sign_in_context)
                 matrix.append(
                     {
                         "tenant": t["display_name"],
@@ -468,7 +469,13 @@ def audit(
     if not json_output:
         typer.secho(f"Scanning tenant {tid}…", fg=typer.colors.CYAN)
     try:
-        result = run_scan(connector, tid, progress_callback=None if json_output else _progress, save=True)
+        result = run_scan(
+            connector,
+            tid,
+            progress_callback=None if json_output else _progress,
+            save=True,
+            sign_in_context=sign_in_context,
+        )
     except RuntimeError as exc:
         typer.secho(str(exc), fg=typer.colors.RED)
         raise typer.Exit(1) from exc
@@ -531,7 +538,7 @@ def plan(
     tenant_id: Annotated[str | None, typer.Option("--tenant", help="Tenant ID (defaults to auth)")] = None,
     mock: Annotated[bool, typer.Option("--mock", help="Use a demo snapshot (no Azure needed)")] = False,
 ) -> None:
-    """Run a scan and list the dry-run revocation steps (executes nothing)."""
+    """Run a scan and list the dry-run AI access cleanup steps (executes nothing)."""
     _load_env()
     cfg = load_config()
     try:
@@ -543,7 +550,7 @@ def plan(
     tid = tenant_id or _resolve_tenant_id(cfg) if not mock else "demo"
     result = run_scan(connector, tid)
     typer.echo(f"Scanned {tid}: {len(result.snapshot.principals)} principals, {len(result.findings)} findings.")
-    typer.echo("Dry-run revocation steps:")
+    typer.echo("Dry-run AI access cleanup steps:")
     for finding in result.findings:
         typer.echo(f"  - [{finding.severity}] {finding.subject} ({finding.rule_id})")
 
@@ -555,7 +562,7 @@ def execute(
     auto_approve: Annotated[bool, typer.Option("--yes", help="Skip the interactive confirmation prompt")] = False,
     mock: Annotated[bool, typer.Option("--mock", help="Use a demo snapshot (no Azure needed)")] = False,
 ) -> None:
-    """Apply the dry-run revocation plan (WRITES to the tenant).
+    """Apply the AI access cleanup plan (WRITES to the tenant).
 
     WARNING: this performs real mutations. You must confirm the plan when
     prompted (unless --yes). Every mutation is logged to the audit log.
@@ -589,7 +596,7 @@ def execute(
         typer.secho("No actionable steps for the current findings.", fg=typer.colors.YELLOW)
         raise typer.Exit(0)
 
-    typer.secho("Plan to apply:", fg=typer.colors.CYAN, bold=True)
+    typer.secho("Dry-run AI access cleanup steps:", fg=typer.colors.CYAN, bold=True)
     for action, target_name, step in steps:
         typer.echo(f"  - [{action}] {target_name}: {step}")
 
@@ -704,10 +711,10 @@ def report(
     typer.echo(f"  {html_path}")
 
 
-# ---- policy sub-commands (v3 Zero Trust) ----
+# ---- AI access policy sub-commands ----
 
 _policy_app = typer.Typer()
-app.add_typer(_policy_app, name="policy", help="Zero Trust policy engine: evaluate the inventory against policy.")
+app.add_typer(_policy_app, name="policy", help="AI access policy engine: evaluate connected AI access against policy.")
 
 
 @_policy_app.command("list")

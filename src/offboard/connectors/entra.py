@@ -33,9 +33,27 @@ class EntraConnector(Connector):
         self._allow_interactive = allow_interactive
         self._access_token: str | None = None
         self._signin_activity_unavailable = False
+        self._signin_activity_unavailable_reason = ""
 
-    # ------------------------------------------------------------------
-    # Auth plumbing
+    @staticmethod
+    def _graph_error_code(exc: requests.HTTPError) -> str:
+        response = exc.response
+        if response is None:
+            return "unknown Graph error"
+        try:
+            return str(response.json().get("error", {}).get("code") or f"HTTP {response.status_code}")
+        except (ValueError, AttributeError):
+            return f"HTTP {response.status_code}"
+
+    @classmethod
+    def _coverage_denied_reason(cls, signal: str, exc: requests.HTTPError) -> str:
+        code = cls._graph_error_code(exc)
+        if code == "Authentication_RequestFromNonPremiumTenantOrB2CTenant":
+            return (
+                f"Microsoft Graph did not provide {signal} telemetry because this tenant "
+                "does not have the required Microsoft Entra ID premium licensing."
+            )
+        return f"Microsoft Graph denied {signal} telemetry ({code}); verify API consent and licensing."
     # ------------------------------------------------------------------
 
     def _auth(self) -> str:
@@ -83,23 +101,19 @@ class EntraConnector(Connector):
     # Data fetch methods
     # ------------------------------------------------------------------
 
-    def _fetch_users(self) -> list[dict[str, Any]]:
-        """Fetch users, degrading when sign-in activity is not permitted."""
+    def _fetch_users(self, sign_in_context: bool = False) -> list[dict[str, Any]]:
+        """Fetch directory users, optionally enriching with sign-in telemetry."""
         base = "id,displayName,userPrincipalName,accountEnabled,createdDateTime"
+        if not sign_in_context:
+            return self._list_all("/users", {"$select": base})
         try:
             return self._list_all("/users", {"$select": f"{base},signInActivity"})
         except requests.HTTPError as exc:
             if exc.response is not None and exc.response.status_code == 403:
                 self._signin_activity_unavailable = True
+                self._signin_activity_unavailable_reason = self._coverage_denied_reason("sign-in activity", exc)
                 return self._list_all("/users", {"$select": base})
             raise
-
-    def _fetch_mfa_registration(self) -> list[dict[str, Any]]:
-        """Fetch explicit MFA registration state from Graph reports."""
-        return self._list_all(
-            "/reports/authenticationMethods/userRegistrationDetails",
-            {"$select": "id,userPrincipalName,isMfaRegistered,isMfaCapable"},
-        )
 
     def _fetch_service_principals(self) -> list[dict[str, Any]]:
         return self._list_all(
@@ -189,16 +203,10 @@ class EntraConnector(Connector):
     @staticmethod
     def _to_principals(
         items: list[dict[str, Any]],
-        mfa_by_id: dict[str, dict[str, Any]] | None = None,
     ) -> list[Principal]:
-        mfa_by_id = mfa_by_id or {}
         out: list[Principal] = []
         for user in items:
             sign_in = user.get("signInActivity") or {}
-            mfa = mfa_by_id.get(str(user.get("id", "")), {})
-            mfa_state = None
-            if "isMfaRegistered" in mfa:
-                mfa_state = "registered" if mfa["isMfaRegistered"] else "not_registered"
             out.append(
                 Principal(
                     id=str(user["id"]),
@@ -206,7 +214,6 @@ class EntraConnector(Connector):
                     type="user",
                     enabled=bool(user.get("accountEnabled", True)),
                     sign_in_last_seen=sign_in.get("lastSignInDateTime"),
-                    mfa_state=mfa_state,
                 )
             )
         return out
@@ -256,7 +263,7 @@ class EntraConnector(Connector):
         by_app_id = {str(sp.get("appId")): sp for sp in service_principals}
         out: list[PermissionGrant] = []
         for grant in items:
-            client = by_app_id.get(str(grant.get("clientId", "")), {})
+            client = by_object_id.get(str(grant.get("clientId", ""))) or by_app_id.get(str(grant.get("clientId", "")), {})
             resource = by_object_id.get(str(grant.get("resourceId", "")), {})
             out.append(
                 PermissionGrant(
@@ -306,28 +313,22 @@ class EntraConnector(Connector):
         self,
         tenant_id: str | None = None,
         progress_callback: Callable[[str], None] | None = None,
+        sign_in_context: bool = False,
     ) -> TenantSnapshot:
         tid = tenant_id or self.get_tenant_id()
         scanned_at = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
         coverage: dict[str, str] = {}
+        coverage_notes: dict[str, str] = {}
+        self._signin_activity_unavailable = False
+        self._signin_activity_unavailable_reason = ""
 
         if progress_callback:
             progress_callback("Fetching users…")
-        raw_users = self._fetch_users()
-        coverage["sign_in_activity"] = "not_assessed" if self._signin_activity_unavailable else "assessed"
-
-        if progress_callback:
-            progress_callback("Fetching MFA registration details…")
-        try:
-            mfa_rows = self._fetch_mfa_registration()
-            mfa_by_id = {str(row.get("id")): row for row in mfa_rows}
-            coverage["mfa"] = "assessed"
-        except requests.HTTPError as exc:
-            if exc.response is not None and exc.response.status_code == 403:
-                mfa_by_id = {}
-                coverage["mfa"] = "not_assessed"
-            else:
-                raise
+        raw_users = self._fetch_users(sign_in_context=sign_in_context)
+        if sign_in_context:
+            coverage["sign_in_activity"] = "not_assessed" if self._signin_activity_unavailable else "assessed"
+            if self._signin_activity_unavailable_reason:
+                coverage_notes["sign_in_activity"] = self._signin_activity_unavailable_reason
 
         if progress_callback:
             progress_callback("Fetching enterprise apps…")
@@ -349,9 +350,10 @@ class EntraConnector(Connector):
         return TenantSnapshot(
             tenant_id=tid or "",
             scanned_at=scanned_at,
-            principals=self._to_principals(raw_users, mfa_by_id),
+            principals=self._to_principals(raw_users),
             app_assignments=assignments,
             permission_grants=grants,
             enterprise_app_count=len(raw_sps),
             coverage=coverage,
+            coverage_notes=coverage_notes,
         )

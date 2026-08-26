@@ -23,9 +23,8 @@ def test_executor_unknown_action():
 def test_remediation_parses_to_action():
     from offboard.cli import _remediation_to_action
 
-    assert _remediation_to_action("Disable sign-in for stale account.") == "block_signin"
+    assert _remediation_to_action("Disable the account to remove residual access.") == "block_signin"
     assert _remediation_to_action("Revoke tokens/SSO sessions.") == "revoke_token"
-    assert _remediation_to_action("Enforce MFA for the account.") is None  # manual step
     assert _remediation_to_action("Review the assigned role scope.") is None  # manual step
 
 

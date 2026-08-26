@@ -35,13 +35,24 @@ def run_scan(
     tenant_id: str,
     progress_callback: Callable[[str], None] | None = None,
     save: bool = False,
+    sign_in_context: bool = False,
 ) -> ScanResult:
-    """Run a full read-only scan and render the audit report.
+    """Run a full read-only AI-access scan and render the audit report.
+
+    Optional sign-in context is not required for the core AI-application
+    inventory or cleanup evidence.
 
     When save=True the result is persisted to the local SQLite store so
     `offboard report --last` can re-render it without re-scanning.
     """
-    snapshot = connector.snapshot(tenant_id, progress_callback=progress_callback)
+    if sign_in_context:
+        snapshot = connector.snapshot(
+            tenant_id,
+            progress_callback=progress_callback,
+            sign_in_context=True,
+        )
+    else:
+        snapshot = connector.snapshot(tenant_id, progress_callback=progress_callback)
     catalog = load_catalog()
     findings = run_rules(snapshot, apps=catalog)
     result = ScanResult(

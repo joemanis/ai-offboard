@@ -165,13 +165,11 @@ class DeviceCodeAuth:
                 )
             if not interactive:
                 raise RuntimeError(
-                    "Cached Microsoft login expired. Run `offboard auth login` before "
-                    "using --json or --bundle."
+                    "Cached Microsoft login expired. Run `offboard auth login` before scanning."
                 )
         elif not interactive:
             raise RuntimeError(
-                "No cached Microsoft login. Run `offboard auth login` before using "
-                "--json or --bundle."
+                "No cached Microsoft login. Run `offboard auth login` before scanning."
             )
         self._flow = self._app.initiate_device_flow(scopes=DEVICE_CODE_SCOPES)
         if "user_code" not in self._flow:

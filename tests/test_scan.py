@@ -4,6 +4,7 @@ import json
 import os
 import zipfile
 
+from offboard.audit.report import render_markdown
 from offboard.config import Config, load_config, parse_env_file, write_env_file
 from offboard.connectors.mock import MockConnector
 from offboard.scan import run_scan, write_evidence_bundle, write_report
@@ -36,11 +37,22 @@ def test_run_scan_produces_report(tmp_path):
     conn = MockConnector()
     result = run_scan(conn, "demo")
     assert len(result.snapshot.principals) == 3
-    assert any(f.rule_id == "R1" for f in result.findings)  # stale disabled
-    assert any(f.rule_id == "R2" for f in result.findings)  # no mfa
+    assert any(f.rule_id == "R1" for f in result.findings)  # disabled account
+    assert not any(f.rule_id == "R2" for f in result.findings)  # identity context is optional
     assert any(f.rule_id == "R4" for f in result.findings)  # high-priv copilot
     assert "[deleted]" not in result.report_md
     assert "# ai-offboard" in result.report_md.lower()
+
+
+def test_report_includes_coverage_notes():
+    result = run_scan(MockConnector(), "demo")
+    result.snapshot.coverage = {"app_assignments": "not_assessed"}
+    result.snapshot.coverage_notes = {"app_assignments": "Some app assignment endpoints were denied."}
+
+    report = render_markdown(result.snapshot, result.findings)
+
+    assert "**App Assignments:** not_assessed" in report
+    assert "Some app assignment endpoints were denied." in report
 
 
 def test_write_report_files(tmp_path):

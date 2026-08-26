@@ -19,8 +19,7 @@ class Principal:
     name: str
     type: str  # "user" | "service_principal"
     enabled: bool = True
-    sign_in_last_seen: str | None = None
-    mfa_state: str | None = None
+    sign_in_last_seen: str | None = None  # optional sign-in context
 
 
 @dataclass
@@ -63,6 +62,7 @@ class TenantSnapshot:
     permission_grants: list[PermissionGrant] = field(default_factory=list)
     enterprise_app_count: int | None = None
     coverage: dict[str, str] = field(default_factory=dict)
+    coverage_notes: dict[str, str] = field(default_factory=dict)
 
 
 class Connector(ABC):
@@ -73,5 +73,9 @@ class Connector(ABC):
         self,
         tenant_id: str,
         progress_callback: Callable[[str], None] | None = None,
+        sign_in_context: bool = False,
     ) -> TenantSnapshot:
-        """Return a read-only snapshot. MUST NOT perform any write."""
+        """Return a read-only snapshot. MUST NOT perform any write.
+
+        Optional sign-in context is disabled for the core AI-access scan.
+        """
