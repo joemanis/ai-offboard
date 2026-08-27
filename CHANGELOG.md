@@ -12,6 +12,39 @@ Focused AI access cleanup scope.
 - Updated dry-run remediation steps to prioritize removing AI assignments and connected-app access, with before/after verification as the next cleanup milestone.
 - Documented that broad OAuth scopes are evaluated as `AI-003` only when the client matches the reviewed AI catalog; non-AI and unknown grants remain in raw inventory without creating AI findings.
 
+## 0.4.5 (2026-08-19)
+
+Authentication status accuracy patch.
+
+### Fixed
+- `offboard auth status` now silently validates the cached device-code token
+  before reporting the session as valid.
+- Stale auth markers are reported as `expired or unavailable` with a direct
+  re-login instruction, and the command exits nonzero.
+- A successful silent refresh updates the local MSAL token cache.
+
+## 0.4.4 (2026-08-19)
+
+Device-code expiry messaging patch.
+
+### Fixed
+- Report a clear actionable error when Microsoft sign-in was not completed
+  before the device code expired, rather than repeating the misleading
+  `authorization pending` response.
+- Added regression coverage for expired device-code flows.
+
+## 0.4.3 (2026-08-19)
+
+Device-code authentication reliability patch.
+
+### Fixed
+- Explicitly poll Microsoft device-code token responses until approval,
+  expiration, or a terminal error.
+- Handle transient `authorization_pending`, `AADSTS70016`, and `slow_down`
+  responses without aborting login.
+- Apply the same polling behavior to CLI and web authentication flows.
+
+
 ## 0.4.2 (2026-08-18)
 
 Noninteractive audit reliability patch.
